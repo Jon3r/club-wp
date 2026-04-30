@@ -1,0 +1,585 @@
+/* PJJA Booking Timetable Styles */
+
+.clubworx-timetable {
+  --clubworx-tt-primary: #1914a6;
+  --clubworx-tt-accent: #ffbe00;
+  --clubworx-tt-text: #333333;
+  --clubworx-tt-surface: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  line-height: 1.6;
+  color: var(--clubworx-tt-text) !important;
+  max-width: 100%;
+  margin: 0 auto;
+  background: var(--clubworx-tt-surface) !important;
+}
+
+.clubworx-timetable-header {
+  margin-bottom: 1.75rem;
+}
+
+.clubworx-timetable-title {
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #2c3e50 !important;
+  text-align: center;
+  margin: 0 0 1.25rem 0;
+  padding-bottom: 0.65rem;
+  border-bottom: 2px solid #c5a059;
+  letter-spacing: -0.02em;
+}
+
+script.clubworx-timetable-config {
+  display: none !important;
+}
+
+/* Happening now / Up next */
+.clubworx-timetable-now-banner {
+  background: var(--clubworx-tt-primary) !important;
+  color: #f8f9fa !important;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 14px rgba(26, 39, 68, 0.25);
+  border: 1px solid rgba(197, 160, 89, 0.45);
+}
+
+.clubworx-timetable-now-banner-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.clubworx-timetable-now-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--clubworx-tt-accent) !important;
+}
+
+.clubworx-timetable-now-detail {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff !important;
+}
+
+/* Category filter chips */
+.clubworx-timetable-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.clubworx-timetable-filter {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #dce4ec !important;
+  background: #ffffff !important;
+  color: #34495e !important;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clubworx-timetable-filter:hover {
+  border-color: #3498db !important;
+  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+}
+
+.clubworx-timetable-filter.is-active {
+  background: var(--clubworx-tt-primary) !important;
+  color: #f8f9fa !important;
+  border-color: var(--clubworx-tt-primary) !important;
+}
+
+.clubworx-timetable-day-empty {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #95a5a6 !important;
+  font-style: italic;
+  text-align: center;
+}
+
+.clubworx-timetable-class--highlight {
+  box-shadow: 0 0 0 2px var(--clubworx-tt-accent), 0 6px 16px rgba(26, 39, 68, 0.18) !important;
+  transform: translateX(2px);
+}
+
+.clubworx-timetable-content {
+  display: grid;
+  gap: 1.5rem;
+  background: #ffffff !important;
+}
+
+/* Grid Layout (Default) */
+.clubworx-timetable-grid .clubworx-timetable-content {
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 2rem;
+}
+
+/* Desktop-specific grid adjustments */
+@media (min-width: 1200px) {
+  .clubworx-timetable-grid .clubworx-timetable-content {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .clubworx-timetable-grid .clubworx-timetable-content {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2rem;
+  }
+}
+
+/* List Layout */
+.clubworx-timetable-list .clubworx-timetable-content {
+  grid-template-columns: 1fr;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Compact Layout */
+.clubworx-timetable-compact .clubworx-timetable-content {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.clubworx-timetable-compact .clubworx-timetable-day {
+  background: #f8f9fa !important;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+/* Desktop Layout - Optimized for larger screens */
+.clubworx-timetable-desktop .clubworx-timetable-content {
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1rem;
+  max-width: none;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-day {
+  padding: 1rem;
+  min-height: 400px;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-day-title {
+  font-size: 1.1rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-day-title::after {
+  display: none;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-class {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-time {
+  font-size: 0.8rem;
+  min-width: 60px;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-class-name {
+  font-size: 0.85rem;
+}
+
+.clubworx-timetable-desktop .clubworx-timetable-category {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.3rem;
+}
+
+/* Desktop layout responsive adjustments */
+@media (max-width: 1400px) {
+  .clubworx-timetable-desktop .clubworx-timetable-content {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .clubworx-timetable-desktop .clubworx-timetable-content {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .clubworx-timetable-desktop .clubworx-timetable-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Day Styling */
+.clubworx-timetable-day {
+  background: var(--clubworx-tt-surface) !important;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+  border: 1px solid #e1e8ed !important;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  color: var(--clubworx-tt-text) !important;
+}
+
+.clubworx-timetable-day::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #3498db, #2ecc71, #f39c12, #e74c3c);
+}
+
+.clubworx-timetable-day:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.clubworx-timetable-day-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #2c3e50 !important;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #ecf0f1 !important;
+  position: relative;
+}
+
+.clubworx-timetable-day-title::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: #3498db;
+}
+
+.clubworx-timetable-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Class Styling */
+.clubworx-timetable-class {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #f8f9fa !important;
+  border-radius: 8px;
+  border-left: 4px solid #bdc3c7 !important;
+  transition: all 0.2s ease;
+  position: relative;
+  color: #333 !important;
+}
+
+.clubworx-timetable-class:hover {
+  background: #ecf0f1 !important;
+  transform: translateX(4px);
+}
+
+/* Category-specific colors */
+.clubworx-timetable-class.kids-under6 {
+  border-left-color: #f39c12 !important;
+  background: linear-gradient(135deg, #fff8e1 0%, #fef9e7 100%) !important;
+}
+
+.clubworx-timetable-class.kids-over6 {
+  border-left-color: #e67e22 !important;
+  background: linear-gradient(135deg, #fef5e7 0%, #fdf2e9 100%) !important;
+}
+
+.clubworx-timetable-class.adults-general {
+  border-left-color: #3498db !important;
+  background: linear-gradient(135deg, #ebf3fd 0%, #e8f4fd 100%) !important;
+}
+
+.clubworx-timetable-class.adults-foundations {
+  border-left-color: #2980b9 !important;
+  background: linear-gradient(135deg, #e8f4fd 0%, #d6eaf8 100%) !important;
+}
+
+.clubworx-timetable-class.women {
+  border-left-color: #e91e63 !important;
+  background: linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%) !important;
+}
+
+/* Time styling */
+.clubworx-timetable-time {
+  font-weight: 600;
+  color: #2c3e50 !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 0.75rem;
+  font-size: 0.9rem;
+  min-width: 70px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Class name styling */
+.clubworx-timetable-class-name {
+  flex: 1;
+  font-weight: 500;
+  color: #34495e !important;
+  font-size: 0.95rem;
+}
+
+/* Category styling */
+.clubworx-timetable-category {
+  font-size: 0.8rem;
+  color: #7f8c8d !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  margin-left: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  white-space: nowrap;
+}
+
+/* Error styling */
+.clubworx-timetable-error {
+  background: #fff5f5 !important;
+  border: 1px solid #fed7d7 !important;
+  color: #c53030 !important;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .clubworx-timetable-grid .clubworx-timetable-content {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .clubworx-timetable-grid .clubworx-timetable-content {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .clubworx-timetable-compact .clubworx-timetable-content {
+    grid-template-columns: 1fr;
+  }
+
+  .clubworx-timetable-title {
+    font-size: 1.5rem;
+  }
+
+  .clubworx-timetable-day {
+    padding: 1rem;
+  }
+
+  .clubworx-timetable-class {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .clubworx-timetable-time {
+    margin-right: 0;
+    margin-bottom: 0.25rem;
+  }
+
+  .clubworx-timetable-category {
+    margin-left: 0;
+    align-self: flex-start;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .clubworx-timetable-grid .clubworx-timetable-content {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .clubworx-timetable {
+    margin: 0;
+  }
+
+  .clubworx-timetable-day {
+    border-radius: 8px;
+    padding: 0.75rem;
+  }
+
+  .clubworx-timetable-title {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .clubworx-timetable-day-title {
+    font-size: 1.1rem;
+  }
+}
+
+/* Animation for loading */
+.clubworx-timetable-loading {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   DARK MODE PREVENTION - Force Light Mode
+   ============================================ */
+
+/* Prevent dark mode from applying to timetable */
+.clubworx-timetable,
+.clubworx-timetable * {
+  color-scheme: light !important;
+}
+
+/* Force light mode even when user prefers dark mode */
+@media (prefers-color-scheme: dark) {
+  .clubworx-timetable {
+    background: #ffffff !important;
+    color: #333 !important;
+  }
+
+  .clubworx-timetable-content {
+    background: #ffffff !important;
+  }
+
+  .clubworx-timetable-title {
+    color: #2c3e50 !important;
+  }
+
+  .clubworx-timetable-day {
+    background: #ffffff !important;
+    border-color: #e1e8ed !important;
+    color: #333 !important;
+  }
+
+  .clubworx-timetable-day-title {
+    color: #2c3e50 !important;
+    border-color: #ecf0f1 !important;
+  }
+
+  .clubworx-timetable-class {
+    background: #f8f9fa !important;
+    border-left-color: #bdc3c7 !important;
+    color: #333 !important;
+  }
+
+  .clubworx-timetable-class:hover {
+    background: #ecf0f1 !important;
+  }
+
+  /* Category-specific overrides for dark mode */
+  .clubworx-timetable-class.kids-under6 {
+    background: linear-gradient(135deg, #fff8e1 0%, #fef9e7 100%) !important;
+    border-left-color: #f39c12 !important;
+  }
+
+  .clubworx-timetable-class.kids-over6 {
+    background: linear-gradient(135deg, #fef5e7 0%, #fdf2e9 100%) !important;
+    border-left-color: #e67e22 !important;
+  }
+
+  .clubworx-timetable-class.adults-general {
+    background: linear-gradient(135deg, #ebf3fd 0%, #e8f4fd 100%) !important;
+    border-left-color: #3498db !important;
+  }
+
+  .clubworx-timetable-class.adults-foundations {
+    background: linear-gradient(135deg, #e8f4fd 0%, #d6eaf8 100%) !important;
+    border-left-color: #2980b9 !important;
+  }
+
+  .clubworx-timetable-class.women {
+    background: linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%) !important;
+    border-left-color: #e91e63 !important;
+  }
+
+  .clubworx-timetable-time {
+    background: rgba(255, 255, 255, 0.8) !important;
+    color: #2c3e50 !important;
+    border-color: rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .clubworx-timetable-class-name {
+    color: #34495e !important;
+  }
+
+  .clubworx-timetable-category {
+    background: rgba(255, 255, 255, 0.9) !important;
+    color: #7f8c8d !important;
+    border-color: rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .clubworx-timetable-compact .clubworx-timetable-day {
+    background: #f8f9fa !important;
+  }
+
+  .clubworx-timetable-error {
+    background: #fff5f5 !important;
+    border-color: #fed7d7 !important;
+    color: #c53030 !important;
+  }
+
+  .clubworx-timetable-now-banner {
+    background: linear-gradient(135deg, #1a2744 0%, #243b55 100%) !important;
+    color: #f8f9fa !important;
+  }
+
+  .clubworx-timetable-filter {
+    background: #ffffff !important;
+    color: #34495e !important;
+  }
+
+  .clubworx-timetable-filter.is-active {
+    background: #1a2744 !important;
+    color: #f8f9fa !important;
+  }
+}
+
+/* Additional overrides for any dark mode classes themes might add */
+.clubworx-timetable.dark-mode,
+.clubworx-timetable[data-theme="dark"],
+body.dark-mode .clubworx-timetable,
+body[data-theme="dark"] .clubworx-timetable,
+html.dark-mode .clubworx-timetable,
+html[data-theme="dark"] .clubworx-timetable {
+  background: #ffffff !important;
+  color: #333 !important;
+}
+
+.clubworx-timetable.dark-mode *,
+.clubworx-timetable[data-theme="dark"] *,
+body.dark-mode .clubworx-timetable *,
+body[data-theme="dark"] .clubworx-timetable *,
+html.dark-mode .clubworx-timetable *,
+html[data-theme="dark"] .clubworx-timetable * {
+  color-scheme: light !important;
+}

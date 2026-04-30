@@ -1,0 +1,372 @@
+/* PJJA Pricing Cards Styles */
+
+.clubworx-pricing {
+  margin: 2rem 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+}
+
+.clubworx-pricing-title {
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 3rem;
+  position: relative;
+}
+
+.clubworx-pricing-title::after {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  margin: 1rem auto 0;
+  border-radius: 2px;
+}
+
+.clubworx-pricing-cards {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 1rem 0;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-snap-type: x mandatory;
+}
+
+.clubworx-pricing-cards::-webkit-scrollbar {
+  display: none;
+}
+
+/* Desktop: Center the cards with max width */
+@media (min-width: 768px) {
+  .clubworx-pricing-cards {
+    justify-content: center;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+}
+
+.clubworx-pricing-card {
+  background: #1e3a8a;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: none;
+  position: relative;
+  transition: all 0.3s ease;
+  text-align: center;
+  min-width: 200px;
+  flex-shrink: 0;
+  color: #ffffff;
+  scroll-snap-align: center;
+}
+
+.clubworx-pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+}
+
+.clubworx-pricing-card-highlighted {
+  background: #1e40af;
+  transform: scale(1.05);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.clubworx-pricing-card-highlighted:hover {
+  transform: scale(1.05) translateY(-4px);
+}
+
+.clubworx-pricing-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: #fbbf24;
+  color: #1e3a8a;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transform: rotate(45deg) translate(25%, -50%);
+  transform-origin: center;
+  border-radius: 0;
+  width: 80px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.clubworx-pricing-plan-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-plan-name {
+  color: #ffffff;
+}
+
+.clubworx-pricing-price {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.clubworx-pricing-currency {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  opacity: 0.9;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-currency {
+  color: #ffffff;
+}
+
+.clubworx-pricing-amount {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #fbbf24;
+  line-height: 1;
+  margin: 0;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-amount {
+  color: #fbbf24;
+}
+
+.clubworx-pricing-cycle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.9;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-cycle {
+  color: #ffffff;
+}
+
+.clubworx-pricing-description {
+  font-size: 0.9rem;
+  color: #ffffff;
+  margin-bottom: 1.5rem;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-description {
+  color: #ffffff;
+}
+
+.clubworx-pricing-button {
+  display: inline-block;
+  background: #fbbf24;
+  color: #1e3a8a;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: 100%;
+  text-align: center;
+  border: none;
+}
+
+.clubworx-pricing-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(251, 191, 36, 0.4);
+  color: #1e3a8a;
+  text-decoration: none;
+  background: #f59e0b;
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-button {
+  background: #fbbf24;
+  color: #1e3a8a;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+}
+
+.clubworx-pricing-card-highlighted .clubworx-pricing-button:hover {
+  background: #f59e0b;
+  color: #1e3a8a;
+  box-shadow: 0 4px 15px rgba(251, 191, 36, 0.4);
+}
+
+.clubworx-pricing-error {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  color: #c53030;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Category sections */
+.clubworx-pricing-category {
+  margin-bottom: 3rem;
+}
+
+.clubworx-pricing-category:last-child {
+  margin-bottom: 0;
+}
+
+.clubworx-pricing-category-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+}
+
+.clubworx-pricing-category-title::after {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  margin: 0.5rem auto 0;
+  border-radius: 2px;
+}
+
+/* Mobile scroll indicators */
+.clubworx-pricing-scroll-hint {
+  text-align: center;
+  margin-top: 1rem;
+  color: #666;
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+.clubworx-pricing-scroll-hint::before {
+  content: "← Swipe to see more →";
+}
+
+/* Mobile: each category row scrolls horizontally and centers cards */
+@media (max-width: 767px) {
+  .clubworx-pricing-category .clubworx-pricing-cards {
+    padding-left: calc(50vw - 100px);
+    padding-right: calc(50vw - 100px);
+    overflow-x: auto;
+  }
+
+  .clubworx-pricing-card {
+    min-width: 180px;
+    padding: 1.5rem;
+  }
+
+  .clubworx-pricing-amount {
+    font-size: 2rem;
+  }
+
+  .clubworx-pricing-plan-name {
+    font-size: 1.1rem;
+  }
+}
+
+/* Tablet: Show 2-3 cards at once */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .clubworx-pricing-cards {
+    justify-content: flex-start;
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+
+  .clubworx-pricing-card {
+    min-width: 220px;
+  }
+}
+
+/* Desktop: Show all cards centered */
+@media (min-width: 1024px) {
+  .clubworx-pricing-cards {
+    justify-content: center;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .clubworx-pricing-card {
+    min-width: 250px;
+    max-width: 280px;
+  }
+}
+
+/* Table Layout (Future Enhancement) */
+.clubworx-pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.clubworx-pricing-table th,
+.clubworx-pricing-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.clubworx-pricing-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.clubworx-pricing-table tr:hover {
+  background: #f8f9ff;
+}
+
+/* Animation for card entrance */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.clubworx-pricing-card {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.clubworx-pricing-card:nth-child(1) {
+  animation-delay: 0.1s;
+}
+.clubworx-pricing-card:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.clubworx-pricing-card:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.clubworx-pricing-card:nth-child(4) {
+  animation-delay: 0.4s;
+}
+.clubworx-pricing-card:nth-child(5) {
+  animation-delay: 0.5s;
+}
+.clubworx-pricing-card:nth-child(6) {
+  animation-delay: 0.6s;
+}
