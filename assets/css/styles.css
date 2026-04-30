@@ -1,0 +1,633 @@
+/* PJJA Trial Class Booking CSS - Reusing existing framework */
+/* Based on projects\pjjatv\GUI\management.css with booking-specific adaptations */
+
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Updated CSS variables inspired by Gracie Parramatta styling */
+:root {
+    /* Gracie-inspired Color Scheme */
+    --primary-color: #32373c;
+    --primary-hover: #1e2328;
+    --secondary-color: #abb8c3;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --danger-color: #cf2e2e;
+    --accent-color: #0693e3;
+    --accent-purple: #9b51e0;
+    --bg-primary: #ffffff;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f8f9fa;
+    --text-primary: #000000;
+    --text-secondary: #32373c;
+    --border-color: #abb8c3;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    
+    /* Booking-specific variables */
+    --header-height: 80px;
+    --max-form-width: 1200px;
+    --button-radius: 9999px;
+    
+    /* Animation Performance */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.3s ease;
+    --transition-slow: 0.5s ease;
+}
+
+/* Body styling reused from projects\pjjatv\GUI\management.css:39-45 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+}
+
+.modal-content h3 {
+    color: var(--success-color);
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.modal-content p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    white-space: pre-line;
+    line-height: 1.6;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+}
+
+/* Loading Overlay Styles */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.loading-content {
+    background: var(--bg-primary);
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: var(--shadow-lg);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Header Styles - Adapted with logo from templates\Kids Monthly Attendance Leaderboard.html:52-70 */
+.app-header {
+    height: var(--header-height);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 2rem;
+    box-shadow: var(--shadow-sm);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Logo styling reused from templates\Kids Monthly Attendance Leaderboard.html:52-70 */
+.header-logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 4px 12px rgba(6, 147, 227, 0.3);
+    transition: transform 0.3s ease;
+}
+
+.header-logo:hover {
+    transform: scale(1.05);
+}
+
+.header-text h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.header-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Form status styling reused from projects\pjjatv\GUI\management.css:102-123 */
+.form-status {
+    padding: 0.25rem 0.5rem;
+    margin: 0.5rem 0;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    background: #d1fae5;
+    color: #065f46;
+    text-align: center;
+}
+
+.form-status.processing {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.form-status.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Field Error Styling */
+.field-error {
+    display: block;
+    color: var(--danger-color) !important;
+    font-size: 0.75rem !important;
+    font-weight: 500;
+    margin-top: 0.25rem !important;
+    padding: 0.25rem 0;
+    line-height: 1.4;
+    animation: errorSlideIn 0.3s ease-out;
+}
+
+@keyframes errorSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Enhanced error state styling for form fields */
+input.error, select.error, textarea.error {
+    border-color: var(--danger-color) !important;
+    box-shadow: 0 0 0 2px rgba(207, 46, 46, 0.1) !important;
+    background-color: rgba(254, 226, 226, 0.3);
+}
+
+input.error:focus, select.error:focus, textarea.error:focus {
+    border-color: var(--danger-color) !important;
+    box-shadow: 0 0 0 3px rgba(207, 46, 46, 0.2) !important;
+}
+
+/* Main Layout - Adapted from projects\pjjatv\GUI\management.css:125-130 */
+.main-layout {
+    padding-top: calc(var(--header-height) + 2rem);
+    padding-bottom: 2rem;
+    min-height: 100vh;
+}
+
+.main-content {
+    max-width: var(--max-form-width);
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Booking Card - Gracie Parramatta inspired clean design */
+.booking-card {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    transition: var(--transition-fast);
+}
+
+.booking-card:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.card-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.card-header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.card-header p {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+/* Form Styling */
+.booking-form {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-section {
+    background: var(--bg-tertiary);
+    padding: 2rem;
+    border-radius: 1rem;
+    border: 2px solid transparent;
+    transition: var(--transition-fast);
+}
+
+.form-section h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 3px solid var(--accent-color);
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Input styling inspired by Gracie Parramatta clean design */
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: var(--transition-fast);
+    font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(6, 147, 227, 0.1);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* Checkbox styling */
+.checkbox-group {
+    margin-bottom: 1rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    position: relative;
+    top: 2px;
+}
+
+.checkmark {
+    flex-shrink: 0;
+}
+
+/* Submit button - Gracie Parramatta inspired styling */
+.submit-btn {
+    background: var(--primary-color);
+    color: #ffffff;
+    border: none;
+    padding: calc(.667em + 2px) calc(1.333em + 2px);
+    border-radius: var(--button-radius);
+    font-size: 1.125em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    margin-top: 1rem;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.submit-btn:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+.submit-btn:active {
+    transform: translateY(0);
+}
+
+.submit-btn:disabled {
+    background: var(--secondary-color);
+    cursor: not-allowed;
+}
+
+/* Modal styles - Reused from projects\pjjatv\GUI\management.css modal patterns */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow-lg);
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+}
+
+.modal-content h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+}
+
+.modal-content p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+    .modal-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .modal-actions .btn {
+        width: 100%;
+        max-width: 250px;
+    }
+}
+
+.btn {
+    padding: calc(.667em + 2px) calc(1.333em + 2px);
+    border: none;
+    border-radius: var(--button-radius);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: #ffffff;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 2px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--secondary-color);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+/* Submit info button styling */
+.submit-info-btn {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.form-helper-text {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Loading overlay - Reused from projects\pjjatv\GUI\management.html:149-155 */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-content p {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Responsive Design - Updated for Gracie-inspired styling with logo */
+@media (max-width: 768px) {
+    .app-header {
+        padding: 0 1rem;
+    }
+    
+    .header-left {
+        gap: 0.75rem;
+    }
+    
+    .header-logo {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .header-text h1 {
+        font-size: 1.25rem;
+    }
+    
+    .booking-card {
+        padding: 2rem;
+        margin: 0 0.5rem;
+        border-radius: 1rem;
+    }
+    
+    .form-section {
+        padding: 1.5rem;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+    
+    .modal-content {
+        padding: 1.5rem;
+        margin: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .main-content {
+        padding: 0 0.5rem;
+    }
+    
+    .header-left {
+        gap: 0.5rem;
+    }
+    
+    .header-logo {
+        width: 35px;
+        height: 35px;
+    }
+    
+    .header-text h1 {
+        font-size: 1.125rem;
+    }
+    
+    .header-subtitle {
+        font-size: 0.75rem;
+    }
+    
+    .booking-card {
+        padding: 1.5rem;
+        border-radius: 1rem;
+    }
+    
+    .form-section {
+        padding: 1rem;
+        border-radius: 0.75rem;
+    }
+    
+    .submit-btn {
+        width: 100%;
+        font-size: 1rem;
+    }
+}
