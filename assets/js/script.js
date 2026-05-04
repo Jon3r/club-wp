@@ -55,8 +55,33 @@ class TrialClassBookingManager {
         }
     }
 
+    getAccountSlug() {
+        const cfg = typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
+        const def = cfg.defaultLocation || 'primary';
+        const form = document.getElementById('trialBookingForm');
+        const wrap = form ? form.closest('.clubworx-booking-wrapper') : document.querySelector('.clubworx-booking-wrapper');
+        const ds = wrap && wrap.getAttribute('data-account');
+        if (ds && String(ds).trim()) {
+            return String(ds).trim();
+        }
+        const hid = form ? form.querySelector('input[name="clubworx_account"]') : null;
+        if (hid && hid.value && String(hid.value).trim()) {
+            return String(hid.value).trim();
+        }
+        return def;
+    }
+
     getCxSettings() {
-        return typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
+        const cfg = typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
+        const slug = this.getAccountSlug();
+        const loc = cfg.locations && cfg.locations[slug] ? cfg.locations[slug] : {};
+        return Object.assign({}, cfg, loc);
+    }
+
+    withAccountPayload(body) {
+        const slug = this.getAccountSlug();
+        const base = body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
+        return Object.assign({}, base, { account: slug });
     }
 
     getClubDisplayName() {
@@ -147,7 +172,8 @@ class TrialClassBookingManager {
         this.updateFormStatus('Loading schedule...', 'processing');
         
         try {
-            const response = await fetch(`${this.baseUrl}schedule-simple`, {
+            const account = encodeURIComponent(this.getAccountSlug());
+            const response = await fetch(`${this.baseUrl}schedule-simple?account=${account}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -848,7 +874,7 @@ class TrialClassBookingManager {
                     'Content-Type': 'application/json',
                     'X-WP-Nonce': this.restNonce
                 },
-                body: JSON.stringify(prospectData)
+                body: JSON.stringify(this.withAccountPayload(prospectData))
             });
             
             console.log('📊 Prospects API response status:', response.status);
@@ -887,7 +913,7 @@ class TrialClassBookingManager {
                 'Content-Type': 'application/json',
                 'X-WP-Nonce': this.restNonce
             },
-            body: JSON.stringify(selectionData)
+            body: JSON.stringify(this.withAccountPayload(selectionData))
         });
         
         console.log('📊 Events API response status:', response.status);
@@ -913,7 +939,7 @@ class TrialClassBookingManager {
                 'Content-Type': 'application/json',
                 'X-WP-Nonce': this.restNonce
             },
-            body: JSON.stringify(bookingData)
+            body: JSON.stringify(this.withAccountPayload(bookingData))
         });
         
         console.log('📊 Bookings API response status:', response.status);

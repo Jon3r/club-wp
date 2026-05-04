@@ -7,9 +7,13 @@
 if (!defined('ABSPATH')) {
     exit;
 }
+
+if (!isset($clubworx_location_slug)) {
+    $clubworx_location_slug = Clubworx_Locations::get_default_slug();
+}
 ?>
 
-<div class="clubworx-booking-wrapper">
+<div class="clubworx-booking-wrapper" data-account="<?php echo esc_attr($clubworx_location_slug); ?>">
     <!-- Main container -->
     <div class="main-layout">
         <main class="main-content">
@@ -17,6 +21,7 @@ if (!defined('ABSPATH')) {
             <div class="booking-card">
                 
                 <form id="trialBookingForm" class="booking-form">
+                    <input type="hidden" name="clubworx_account" id="clubworxAccountField" value="<?php echo esc_attr($clubworx_location_slug); ?>" />
                     <!-- Personal Information Section -->
                     <div class="form-section">
                         <h3><?php _e('Personal Information', 'clubworx-integration'); ?></h3>

@@ -24,6 +24,103 @@ class Clubworx_REST_API {
         add_action('rest_api_init', array($this, 'register_routes'));
         add_action('init', array($this, 'register_shortcodes'));
     }
+
+    /**
+     * @return WP_REST_Response
+     */
+    private function rest_error_from_wp_error(WP_Error $err) {
+        $data = $err->get_error_data();
+        $status = is_array($data) && isset($data['status']) ? (int) $data['status'] : 400;
+        return new WP_REST_Response(array(
+            'error' => $err->get_error_code(),
+            'message' => $err->get_error_message(),
+        ), $status);
+    }
+
+    /**
+     * Empty timetable structure matching front-end expectations.
+     *
+     * @return array<string,mixed>
+     */
+    private function empty_schedule_tree() {
+        return array(
+            'kids' => array(
+                'under6' => array(),
+                'over6' => array(),
+            ),
+            'adults' => array(
+                'general' => array(),
+                'foundations' => array(),
+            ),
+            'women' => array(),
+        );
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $slug_schedules slug => schedule
+     * @return array<string,mixed>
+     */
+    private function merge_schedule_trees($slug_schedules) {
+        if (!is_array($slug_schedules) || empty($slug_schedules)) {
+            return $this->empty_schedule_tree();
+        }
+        if (count($slug_schedules) === 1) {
+            $one = reset($slug_schedules);
+            return is_array($one) ? $one : $this->empty_schedule_tree();
+        }
+        $out = $this->empty_schedule_tree();
+        $all = Clubworx_Locations::all();
+        foreach ($slug_schedules as $slug => $sch) {
+            if (!is_array($sch)) {
+                continue;
+            }
+            $label = isset($all[$slug]['label']) ? $all[$slug]['label'] : $slug;
+            $prefix = '[' . $label . '] ';
+            $this->merge_one_schedule_into($out, $sch, $prefix);
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $out
+     * @param array<string,mixed> $sch
+     */
+    private function merge_one_schedule_into(&$out, $sch, $prefix) {
+        foreach (array('kids', 'adults') as $cat) {
+            if (!isset($sch[$cat]) || !is_array($sch[$cat])) {
+                continue;
+            }
+            foreach ($sch[$cat] as $sub => $days) {
+                if (!isset($out[$cat][$sub])) {
+                    $out[$cat][$sub] = array();
+                }
+                if (!is_array($days)) {
+                    continue;
+                }
+                foreach ($days as $day => $classes) {
+                    if (!is_array($classes)) {
+                        continue;
+                    }
+                    foreach ($classes as $c) {
+                        $out[$cat][$sub][$day][] = $prefix . $c;
+                    }
+                }
+            }
+        }
+        if (isset($sch['women']) && is_array($sch['women'])) {
+            foreach ($sch['women'] as $day => $classes) {
+                if (!is_array($classes)) {
+                    continue;
+                }
+                if (!isset($out['women'][$day])) {
+                    $out['women'][$day] = array();
+                }
+                foreach ($classes as $c) {
+                    $out['women'][$day][] = $prefix . $c;
+                }
+            }
+        }
+    }
     
     /**
      * Register shortcodes
@@ -42,6 +139,13 @@ class Clubworx_REST_API {
             'methods' => 'GET',
             'callback' => array($this, 'get_schedule'),
             'permission_callback' => '__return_true',
+            'args' => array(
+                'account' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+            ),
         ));
         
         // Prospects endpoint (create contact in ClubWorx)
@@ -136,6 +240,17 @@ class Clubworx_REST_API {
             'methods' => 'GET',
             'callback' => array($this, 'get_membership_plans'),
             'permission_callback' => '__return_true',
+            'args' => array(
+                'account' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+                'refresh' => array(
+                    'required' => false,
+                    'type' => 'string',
+                ),
+            ),
         ));
         
         // Test email endpoint
@@ -161,24 +276,38 @@ class Clubworx_REST_API {
      * Get schedule data
      */
     public function get_schedule($request) {
-        // Get settings to check if ClubWorx is configured
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_configured = !empty($settings['clubworx_api_url']) && !empty($settings['clubworx_api_key']);
-        
-        // Get schedule (will try ClubWorx if configured, otherwise use fallback)
-        $schedule = $this->get_clubworx_schedule();
-        
-        // Add debug info
+        $account_raw = $request->get_param('account');
+        $account_raw = is_string($account_raw) ? $account_raw : '';
+        $slugs = Clubworx_Locations::expand_account_slugs($account_raw, null);
+
+        $slug_schedules = array();
+        foreach ($slugs as $slug) {
+            $slug_schedules[$slug] = $this->get_clubworx_schedule($slug);
+        }
+        $schedule = $this->merge_schedule_trees($slug_schedules);
+
+        $clubworx_configured = true;
+        foreach ($slugs as $slug) {
+            $loc = Clubworx_Locations::get($slug);
+            if (!$loc || empty($loc['api_url']) || empty($loc['api_key'])) {
+                $clubworx_configured = false;
+                break;
+            }
+        }
+
+        $first = $slugs[0];
+        $cache_key = 'clubworx_schedule_' . $first;
         $debug_info = array(
             'clubworx_configured' => $clubworx_configured,
-            'cache_status' => get_transient('clubworx_schedule') !== false ? 'cached' : 'not_cached',
-            'data_source' => $clubworx_configured ? 'clubworx_or_fallback' : 'fallback_only'
+            'accounts' => $slugs,
+            'cache_status' => get_transient($cache_key) !== false ? 'cached' : 'not_cached',
+            'data_source' => $clubworx_configured ? 'clubworx_or_fallback' : 'fallback_only',
         );
-        
+
         return new WP_REST_Response(array(
             'success' => true,
             'schedule' => $schedule,
-            'debug' => $debug_info
+            'debug' => $debug_info,
         ), 200);
     }
     
@@ -187,43 +316,38 @@ class Clubworx_REST_API {
      */
     public function create_prospect($request) {
         $data = $request->get_json_params();
-        
-        // Get ClubWorx settings
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
-            return new WP_REST_Response(array(
-                'error' => 'ClubWorx API not configured',
-                'message' => 'Please configure ClubWorx API settings in WordPress admin'
-            ), 500);
+        if (!is_array($data)) {
+            $data = array();
         }
-        
-        // Make API call to ClubWorx with account_key as query parameter
-        // Ensure the base URL ends with /api/v2/ to avoid double paths
+
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
+            return $this->rest_error_from_wp_error($resolved);
+        }
+
+        $slug = isset($resolved['_slug']) ? sanitize_key($resolved['_slug']) : Clubworx_Locations::get_default_slug();
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+
         $base_url = rtrim($clubworx_api_url, '/');
         if (!str_ends_with($base_url, '/api/v2')) {
             $base_url .= '/api/v2';
         }
         $api_url = $base_url . '/prospects?account_key=' . urlencode($clubworx_api_key);
-        
-        // Convert JSON data to form-encoded data
+
         $form_data = array(
             'first_name' => isset($data['first_name']) ? $data['first_name'] : '',
             'last_name' => isset($data['last_name']) ? $data['last_name'] : '',
             'email' => isset($data['email']) ? $data['email'] : '',
             'phone' => isset($data['phone']) ? $data['phone'] : '',
-            'status' => isset($data['status']) ? $data['status'] : 'Initial Contact'
+            'status' => isset($data['status']) ? $data['status'] : 'Initial Contact',
         );
-        
-        // Build form-encoded string
+
         $form_string = http_build_query($form_data);
-        
-        // Debug logging
+
         error_log('Clubworx Integration: Prospects API URL: ' . $api_url);
         error_log('Clubworx Integration: Form data: ' . $form_string);
-        
+
         $response = wp_remote_post($api_url, array(
             'headers' => array(
                 'Content-Type' => 'application/x-www-form-urlencoded',
@@ -232,28 +356,29 @@ class Clubworx_REST_API {
             'body' => $form_string,
             'timeout' => 30,
         ));
-        
+
         if (is_wp_error($response)) {
             return new WP_REST_Response(array(
                 'error' => 'ClubWorx API error',
-                'message' => $response->get_error_message()
+                'message' => $response->get_error_message(),
             ), 500);
         }
-        
+
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        // Debug logging to see actual ClubWorx response structure
+
         error_log('Clubworx Integration: ClubWorx prospects response: ' . json_encode($body));
         error_log('Clubworx Integration: Response code: ' . wp_remote_retrieve_response_code($response));
-        
-        // Store booking in WordPress database as backup
-        $this->store_booking_data('prospect', $data, $body);
-        
-        // Send notification email if enabled
-        if (isset($settings['email_notifications']) && $settings['email_notifications']) {
-            $this->send_prospect_notification($data, $body);
+
+        $this->store_booking_data('prospect', $data, $body, $slug);
+
+        $loc = $resolved;
+        unset($loc['_slug']);
+        if (!empty($loc['email']['enabled'])) {
+            Clubworx_SMTP_Context::with_location($loc, function () use ($data, $body, $loc) {
+                $this->send_prospect_notification($data, $body, $loc);
+            });
         }
-        
+
         return new WP_REST_Response($body, wp_remote_retrieve_response_code($response));
     }
     
@@ -261,26 +386,32 @@ class Clubworx_REST_API {
      * Test ClubWorx response structure
      */
     public function test_clubworx_response($request) {
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
             return new WP_REST_Response(array(
-                'error' => 'ClubWorx API not configured'
+                'error' => $resolved->get_error_code(),
+                'message' => $resolved->get_error_message(),
             ), 500);
         }
-        
+
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+
+        $base_url = rtrim($clubworx_api_url, '/');
+        if (!str_ends_with($base_url, '/api/v2')) {
+            $base_url .= '/api/v2';
+        }
+
         // Test with a simple prospect creation to see response structure
         $test_data = array(
             'first_name' => 'Test',
             'last_name' => 'User',
             'email' => 'test@example.com',
             'phone' => '0412345678',
-            'source' => 'API Test'
+            'source' => 'API Test',
         );
-        
-        $api_url = $clubworx_api_url . '/prospects?account_key=' . urlencode($clubworx_api_key);
+
+        $api_url = $base_url . '/prospects?account_key=' . urlencode($clubworx_api_key);
         $response = wp_remote_post($api_url, array(
             'headers' => array(
                 'Content-Type' => 'application/json',
@@ -312,18 +443,18 @@ class Clubworx_REST_API {
      */
     public function find_events($request) {
         $data = $request->get_json_params();
-        
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
-            return new WP_REST_Response(array(
-                'error' => 'ClubWorx API not configured'
-            ), 500);
+        if (!is_array($data)) {
+            $data = array();
         }
-        
-        // Get the class information from the request
+
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
+            return $this->rest_error_from_wp_error($resolved);
+        }
+
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+
         $selectedClass = isset($data['selectedClass']) ? $data['selectedClass'] : '';
         $day = isset($data['day']) ? $data['day'] : '';
         
@@ -519,39 +650,36 @@ class Clubworx_REST_API {
      */
     public function create_booking($request) {
         $data = $request->get_json_params();
-        
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
-            return new WP_REST_Response(array(
-                'error' => 'ClubWorx API not configured'
-            ), 500);
+        if (!is_array($data)) {
+            $data = array();
         }
-        
-        // Make API call to ClubWorx with account_key as query parameter
-        // Ensure the base URL ends with /api/v2/ to avoid double paths
+
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
+            return $this->rest_error_from_wp_error($resolved);
+        }
+
+        $slug = isset($resolved['_slug']) ? sanitize_key($resolved['_slug']) : Clubworx_Locations::get_default_slug();
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+
         $base_url = rtrim($clubworx_api_url, '/');
         if (!str_ends_with($base_url, '/api/v2')) {
             $base_url .= '/api/v2';
         }
         $api_url = $base_url . '/bookings?account_key=' . urlencode($clubworx_api_key);
-        
-        // Convert JSON data to form-encoded data for ClubWorx API v2
+
         $form_data = array(
             'contact_key' => isset($data['contact_key']) ? $data['contact_key'] : '',
-            'event_id' => isset($data['event_id']) ? $data['event_id'] : ''
+            'event_id' => isset($data['event_id']) ? $data['event_id'] : '',
         );
-        
-        // Build form-encoded string
+
         $form_string = http_build_query($form_data);
-        
-        // Debug logging
+
         error_log('Clubworx Integration: Creating booking with data: ' . json_encode($data));
         error_log('Clubworx Integration: Form data: ' . $form_string);
         error_log('Clubworx Integration: API URL: ' . $api_url);
-        
+
         $response = wp_remote_post($api_url, array(
             'headers' => array(
                 'Content-Type' => 'application/x-www-form-urlencoded',
@@ -560,48 +688,49 @@ class Clubworx_REST_API {
             'body' => $form_string,
             'timeout' => 30,
         ));
-        
+
         if (is_wp_error($response)) {
             return new WP_REST_Response(array(
-                'error' => $response->get_error_message()
+                'error' => $response->get_error_message(),
             ), 500);
         }
-        
+
         $body = json_decode(wp_remote_retrieve_body($response), true);
         $response_code = wp_remote_retrieve_response_code($response);
-        
-        // Debug logging to see actual ClubWorx response structure
+
         error_log('Clubworx Integration: ClubWorx bookings response: ' . json_encode($body));
         error_log('Clubworx Integration: Response code: ' . $response_code);
-        
-        // Store booking in WordPress database regardless of ClubWorx response
-        $this->store_booking_data('booking', $data, $body);
-        
-        // If ClubWorx API returns an error, return a mock success response
-        // This allows the booking process to complete while we figure out the correct API
+
+        $this->store_booking_data('booking', $data, $body, $slug);
+
+        $loc = $resolved;
+        unset($loc['_slug']);
+
         if ($response_code !== 200) {
             $mockResponse = array(
                 'success' => true,
                 'booking_id' => 'mock_booking_' . time(),
                 'message' => 'Booking stored locally. ClubWorx API endpoint needs configuration.',
-                'clubworx_error' => $body
+                'clubworx_error' => $body,
             );
-            
+
             error_log('Clubworx Integration: ClubWorx API failed, returning mock response: ' . json_encode($mockResponse));
-            
-            // Send notification email if enabled
-            if (isset($settings['email_notifications']) && $settings['email_notifications']) {
-                $this->send_booking_notification($data, $mockResponse);
+
+            if (!empty($loc['email']['enabled'])) {
+                Clubworx_SMTP_Context::with_location($loc, function () use ($data, $mockResponse, $loc) {
+                    $this->send_booking_notification($data, $mockResponse, $loc);
+                });
             }
-            
+
             return new WP_REST_Response($mockResponse, 200);
         }
-        
-        // Send notification email if enabled
-        if (isset($settings['email_notifications']) && $settings['email_notifications']) {
-            $this->send_booking_notification($data, $body);
+
+        if (!empty($loc['email']['enabled'])) {
+            Clubworx_SMTP_Context::with_location($loc, function () use ($data, $body, $loc) {
+                $this->send_booking_notification($data, $body, $loc);
+            });
         }
-        
+
         return new WP_REST_Response($body, $response_code);
     }
     
@@ -625,48 +754,75 @@ class Clubworx_REST_API {
      */
     public function send_ga4_measurement($request) {
         $data = $request->get_json_params();
-        
-        $settings = get_option('clubworx_integration_settings', array());
-        $ga4_api_secret = isset($settings['ga4_api_secret']) ? $settings['ga4_api_secret'] : '';
-        $ga4_measurement_id = isset($settings['ga4_measurement_id']) ? $settings['ga4_measurement_id'] : '';
-        
-        if (empty($ga4_api_secret) || empty($ga4_measurement_id)) {
+        if (!is_array($data)) {
+            $data = array();
+        }
+
+        $slug = Clubworx_Locations::get_account_param_from_request($request);
+        if ($slug === null) {
+            $slug = Clubworx_Locations::get_default_slug();
+        }
+        $loc = Clubworx_Locations::get($slug);
+        if ($loc === null) {
+            return new WP_REST_Response(array(
+                'success' => false,
+                'reason' => 'Unknown Clubworx location',
+            ), 200);
+        }
+
+        $a = isset($loc['analytics']) && is_array($loc['analytics']) ? $loc['analytics'] : array();
+        $ga4_api_secret = isset($a['ga4_api_secret']) ? $a['ga4_api_secret'] : '';
+        $ga4_measurement_id = isset($a['ga4_measurement_id']) ? $a['ga4_measurement_id'] : '';
+
+        if ($ga4_api_secret === '' || $ga4_measurement_id === '') {
             return new WP_REST_Response(array(
                 'success' => false,
                 'reason' => 'GA4 Measurement Protocol not configured',
-                'fallback' => 'Configure GA4 Measurement ID and API secret in settings',
+                'fallback' => 'Configure GA4 Measurement ID and API secret for this location',
             ), 200);
         }
-        
+
         $measurement_url = "https://www.google-analytics.com/mp/collect?measurement_id={$ga4_measurement_id}&api_secret={$ga4_api_secret}";
-        
+
         $response = wp_remote_post($measurement_url, array(
             'headers' => array('Content-Type' => 'application/json'),
-            'body' => json_encode($data),
+            'body' => wp_json_encode($data),
             'timeout' => 10,
         ));
-        
+
         if (is_wp_error($response)) {
             return new WP_REST_Response(array(
                 'success' => false,
-                'error' => $response->get_error_message()
+                'error' => $response->get_error_message(),
             ), 500);
         }
-        
+
+        $event_count = isset($data['events']) && is_array($data['events']) ? count($data['events']) : 0;
+
         return new WP_REST_Response(array(
             'success' => true,
             'measurement_id' => $ga4_measurement_id,
-            'events_sent' => count($data['events'])
+            'events_sent' => $event_count,
         ), 200);
     }
     
     /**
      * Store booking data in WordPress database
      */
-    private function store_booking_data($type, $request_data, $response_data) {
+    private function store_booking_data($type, $request_data, $response_data, $account = null) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'clubworx_bookings';
-        
+
+        if ($account === null || $account === '') {
+            if (is_array($request_data) && !empty($request_data['account'])) {
+                $account = sanitize_key($request_data['account']);
+            } else {
+                $account = Clubworx_Locations::get_default_slug();
+            }
+        } else {
+            $account = sanitize_key($account);
+        }
+
         // Create table if it doesn't exist
         $this->create_bookings_table();
         
@@ -707,6 +863,7 @@ class Clubworx_REST_API {
         
         $wpdb->insert($table_name, array(
             'type' => $type,
+            'account' => $account,
             'request_data' => json_encode($enhanced_request_data),
             'response_data' => json_encode($response_data),
             'source' => $source,
@@ -823,40 +980,46 @@ class Clubworx_REST_API {
      * Get diagnostic information
      */
     public function get_diagnostics($request) {
-        $settings = get_option('clubworx_integration_settings', array());
-        
+        $locations_diag = array();
+        foreach (Clubworx_Locations::all() as $slug => $loc) {
+            $configured = !empty($loc['api_url']) && !empty($loc['api_key']);
+            $cache_key = 'clubworx_schedule_' . sanitize_key($slug);
+            $locations_diag[$slug] = array(
+                'label' => isset($loc['label']) ? $loc['label'] : $slug,
+                'api_url' => isset($loc['api_url']) ? $loc['api_url'] : '',
+                'clubworx_configured' => $configured,
+                'schedule_cache' => get_transient($cache_key) !== false ? 'cached' : 'not_cached',
+            );
+        }
+
+        $def = Clubworx_Locations::get_default_slug();
+        try {
+            $schedule = $this->get_clubworx_schedule($def);
+            $sample = array();
+            if (isset($schedule['adults']['general']['monday']) && is_array($schedule['adults']['general']['monday'])) {
+                $sample = $schedule['adults']['general']['monday'];
+            }
+            $schedule_summary = array(
+                'default_location' => $def,
+                'has_kids' => isset($schedule['kids']),
+                'has_adults' => isset($schedule['adults']),
+                'has_women' => isset($schedule['women']),
+                'sample_classes' => $sample,
+            );
+        } catch (Exception $e) {
+            $schedule_summary = array('error' => $e->getMessage());
+        }
+
         $diagnostics = array(
             'timestamp' => current_time('mysql'),
             'wordpress_version' => get_bloginfo('version'),
             'plugin_version' => CLUBWORX_INTEGRATION_VERSION,
-            'clubworx_api_url' => isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '',
-            'clubworx_api_key_set' => !empty($settings['clubworx_api_key']),
-            'clubworx_configured' => !empty($settings['clubworx_api_url']) && !empty($settings['clubworx_api_key']),
-            'cache_exists' => get_transient('clubworx_schedule') !== false,
-            'cache_expires' => get_transient('clubworx_schedule') !== false ? 
-                (time() + get_option('_transient_timeout_clubworx_schedule')) : null,
+            'locations' => $locations_diag,
+            'current_schedule' => $schedule_summary,
             'rest_api_url' => rest_url('clubworx/v1/'),
             'wp_rest_enabled' => rest_url() !== false,
         );
-        
-        // Try to get current schedule
-        try {
-            $schedule = $this->get_clubworx_schedule();
-            $diagnostics['current_schedule'] = array(
-                'has_kids' => isset($schedule['kids']),
-                'has_adults' => isset($schedule['adults']),
-                'has_women' => isset($schedule['women']),
-                'sample_classes' => array()
-            );
-            
-            // Add sample classes for verification
-            if (isset($schedule['adults']['general']['monday'])) {
-                $diagnostics['current_schedule']['sample_classes'] = $schedule['adults']['general']['monday'];
-            }
-        } catch (Exception $e) {
-            $diagnostics['schedule_error'] = $e->getMessage();
-        }
-        
+
         return new WP_REST_Response($diagnostics, 200);
     }
     
@@ -864,18 +1027,18 @@ class Clubworx_REST_API {
      * Test ClubWorx API and return raw response
      */
     public function test_clubworx_raw($request) {
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
             return new WP_REST_Response(array(
                 'success' => false,
-                'error' => 'ClubWorx API not configured',
-                'message' => 'Please configure ClubWorx API URL and Key in Settings'
+                'error' => $resolved->get_error_code(),
+                'message' => $resolved->get_error_message(),
             ), 400);
         }
-        
+
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+
         try {
             // Build the correct ClubWorx API URL with required parameters
             $base_url = rtrim($clubworx_api_url, '/');
@@ -951,9 +1114,26 @@ class Clubworx_REST_API {
      * Debug class processing to show exactly what's happening
      */
     public function debug_class_processing($request) {
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_configured = !empty($settings['clubworx_api_url']) && !empty($settings['clubworx_api_key']);
-        
+        $resolved = Clubworx_Locations::resolve_from_request($request);
+        if (is_wp_error($resolved)) {
+            return new WP_REST_Response(array(
+                'configured' => false,
+                'error' => $resolved->get_error_message(),
+                'raw_clubworx_data' => null,
+                'processed_schedule' => null,
+                'processing_stats' => array(
+                    'total_raw_classes' => 0,
+                    'total_processed_classes' => 0,
+                    'total_skipped_classes' => 0,
+                    'class_breakdown' => array(),
+                ),
+            ), 200);
+        }
+
+        $clubworx_api_url = $resolved['api_url'];
+        $clubworx_api_key = $resolved['api_key'];
+        $clubworx_configured = true;
+
         $response = array(
             'configured' => $clubworx_configured,
             'raw_clubworx_data' => null,
@@ -962,15 +1142,11 @@ class Clubworx_REST_API {
                 'total_raw_classes' => 0,
                 'total_processed_classes' => 0,
                 'total_skipped_classes' => 0,
-                'class_breakdown' => array()
-            )
+                'class_breakdown' => array(),
+            ),
         );
-        
+
         if ($clubworx_configured) {
-            // Get raw ClubWorx data by making a direct API call
-            $settings = get_option('clubworx_integration_settings', array());
-            $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-            $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
             
             $raw_data = null;
             try {
@@ -1026,7 +1202,8 @@ class Clubworx_REST_API {
             }
             
             // Get processed schedule
-            $processed = $this->get_clubworx_schedule();
+            $sched_slug = isset($resolved['_slug']) ? sanitize_key($resolved['_slug']) : Clubworx_Locations::get_default_slug();
+            $processed = $this->get_clubworx_schedule($sched_slug);
             $response['processed_schedule'] = $processed;
             
             // Count processed classes
@@ -1071,84 +1248,85 @@ class Clubworx_REST_API {
      * Clear schedule cache
      */
     public function clear_schedule_cache($request) {
-        $cache_key = 'clubworx_schedule';
-        
-        // Always delete the transient, regardless of whether it exists
-        delete_transient($cache_key);
-        
-        // Get settings to provide helpful feedback
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_configured = !empty($settings['clubworx_api_url']) && !empty($settings['clubworx_api_key']);
-        
-        error_log('Clubworx Integration: Schedule cache cleared by admin');
-        
+        delete_transient('clubworx_schedule');
+        foreach (array_keys(Clubworx_Locations::all()) as $slug) {
+            delete_transient('clubworx_schedule_' . sanitize_key($slug));
+        }
+
+        $def = Clubworx_Locations::get_default_slug();
+        $loc = Clubworx_Locations::get($def);
+        $clubworx_configured = $loc && !empty($loc['api_url']) && !empty($loc['api_key']);
+
+        error_log('Clubworx Integration: Schedule cache cleared by admin (all locations)');
+
         $message = 'Schedule cache cleared successfully. ';
         if (!$clubworx_configured) {
-            $message .= 'Note: ClubWorx API is not configured yet. Please add your ClubWorx API URL and Key in Settings.';
+            $message .= 'Note: Configure API URL and key for each location under Settings.';
         } else {
             $message .= 'Next request will fetch fresh data from ClubWorx.';
         }
-        
+
         return new WP_REST_Response(array(
             'success' => true,
             'message' => $message,
             'clubworx_configured' => $clubworx_configured,
-            'api_url' => $clubworx_configured ? $settings['clubworx_api_url'] : 'not_set'
+            'api_url' => ($clubworx_configured && $loc) ? $loc['api_url'] : 'not_set',
         ), 200);
     }
     
     /**
-     * Get ClubWorx schedule
-     * Fetches schedule data from ClubWorx API with caching
-     * Cache expires at midnight every Sunday (end of week)
+     * Get ClubWorx schedule for one location slug (cached per slug).
+     *
+     * @param string|null $slug Location slug; default location when null.
+     * @return array<string,mixed>
      */
-    private function get_clubworx_schedule() {
-        // Check for cached schedule (cache expires at midnight on Sunday)
-        $cache_key = 'clubworx_schedule';
+    private function get_clubworx_schedule($slug = null) {
+        if ($slug === null || $slug === '') {
+            $slug = Clubworx_Locations::get_default_slug();
+        }
+        $slug = sanitize_key($slug);
+        $loc = Clubworx_Locations::get($slug);
+        if ($loc === null) {
+            return $this->get_fallback_schedule_for_location(null);
+        }
+
+        $clubworx_api_url = isset($loc['api_url']) ? $loc['api_url'] : '';
+        $clubworx_api_key = isset($loc['api_key']) ? $loc['api_key'] : '';
+
+        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
+            error_log('Clubworx Integration: ClubWorx API not configured for location ' . $slug . ', using fallback schedule');
+            return $this->get_fallback_schedule_for_location($loc);
+        }
+
+        $cache_key = 'clubworx_schedule_' . $slug;
         $cached_schedule = get_transient($cache_key);
-        
+
         if ($cached_schedule !== false) {
-            error_log('Clubworx Integration: Using cached schedule data');
+            error_log('Clubworx Integration: Using cached schedule data for ' . $slug);
             return $cached_schedule;
         }
-        
-        // Get ClubWorx settings
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        // If ClubWorx not configured, return fallback hardcoded schedule
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
-            error_log('Clubworx Integration: ClubWorx API not configured, using fallback schedule');
-            return $this->get_fallback_schedule();
-        }
-        
-        // Fetch schedule from ClubWorx API using correct format
+
         try {
-            error_log('Clubworx Integration: Fetching schedule from ClubWorx API: ' . $clubworx_api_url);
-            
-            // Build the correct ClubWorx API URL with required parameters
+            error_log('Clubworx Integration: Fetching schedule from ClubWorx API for ' . $slug . ': ' . $clubworx_api_url);
+
             $base_url = rtrim($clubworx_api_url, '/');
             if (strpos($base_url, '/api/v2') === false) {
                 $base_url = $base_url . '/api/v2';
             }
-            
-            // Set date range for events (current week only)
+
             $start_date = date('Y-m-d', strtotime('monday this week'));
-            $end_date = date('Y-m-d', strtotime('monday next week')); // Monday of next week (exclusive)
-            // Build query parameters as per ClubWorx API docs
+            $end_date = date('Y-m-d', strtotime('monday next week'));
+
             $query_params = array(
                 'account_key' => $clubworx_api_key,
                 'event_starts_after' => $start_date,
                 'event_ends_before' => $end_date,
                 'page' => 1,
-                'page_size' => 100
+                'page_size' => 100,
             );
-            
+
             $api_url = $base_url . '/events?' . http_build_query($query_params);
-            
-            error_log('Clubworx Integration: Full API URL: ' . $api_url);
-            
+
             $response = wp_remote_get($api_url, array(
                 'headers' => array(
                     'Accept' => 'application/json',
@@ -1156,49 +1334,62 @@ class Clubworx_REST_API {
                 ),
                 'timeout' => 15,
             ));
-            
+
             if (is_wp_error($response)) {
                 error_log('Clubworx Integration: ClubWorx API error: ' . $response->get_error_message());
-                return $this->get_fallback_schedule();
+                return $this->get_fallback_schedule_for_location($loc);
             }
-            
+
             $status_code = wp_remote_retrieve_response_code($response);
             if ($status_code !== 200) {
                 error_log('Clubworx Integration: ClubWorx API returned status ' . $status_code);
-                return $this->get_fallback_schedule();
+                return $this->get_fallback_schedule_for_location($loc);
             }
-            
+
             $body = wp_remote_retrieve_body($response);
             $schedule_data = json_decode($body, true);
-            
+
             if (!$schedule_data || !is_array($schedule_data)) {
                 error_log('Clubworx Integration: Invalid schedule data received from ClubWorx');
-                return $this->get_fallback_schedule();
+                return $this->get_fallback_schedule_for_location($loc);
             }
-            
-            // Transform ClubWorx schedule format to plugin format if needed
+
             $formatted_schedule = $this->format_clubworx_schedule($schedule_data);
-            
-            // Cache the schedule until midnight on Sunday (end of current week)
+
             $cache_expiration = $this->get_sunday_midnight_timestamp();
             $cache_duration = $cache_expiration - time();
-            
-            // Ensure cache duration is positive (minimum 1 minute)
+
             if ($cache_duration <= 60) {
-                // If less than 1 minute, cache until next Sunday
                 $cache_expiration = strtotime('next Sunday midnight', current_time('timestamp'));
                 $cache_duration = $cache_expiration - time();
             }
-            
+
             set_transient($cache_key, $formatted_schedule, $cache_duration);
-            
-            error_log('Clubworx Integration: Successfully fetched and cached schedule from ClubWorx until ' . date('Y-m-d H:i:s', $cache_expiration));
+
+            error_log('Clubworx Integration: Successfully fetched and cached schedule for ' . $slug . ' until ' . date('Y-m-d H:i:s', $cache_expiration));
             return $formatted_schedule;
-            
+
         } catch (Exception $e) {
             error_log('Clubworx Integration: Exception fetching ClubWorx schedule: ' . $e->getMessage());
-            return $this->get_fallback_schedule();
+            return $this->get_fallback_schedule_for_location($loc);
         }
+    }
+
+    /**
+     * Fallback schedule JSON from one location row.
+     *
+     * @param array<string,mixed>|null $loc
+     * @return array<string,mixed>
+     */
+    private function get_fallback_schedule_for_location($loc) {
+        if ($loc !== null && !empty($loc['fallback_schedule_json'])) {
+            $decoded = json_decode($loc['fallback_schedule_json'], true);
+            if (is_array($decoded) && !empty($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return $this->empty_schedule_tree();
     }
     
     /**
@@ -1250,7 +1441,7 @@ class Clubworx_REST_API {
         } else {
             // Unknown format - log the structure and return fallback
             error_log('Clubworx Integration: Unknown ClubWorx data format. Type: ' . gettype($clubworx_data) . ', Keys: ' . (is_array($clubworx_data) ? implode(', ', array_keys($clubworx_data)) : 'N/A'));
-            return $this->get_fallback_schedule();
+            return $this->empty_schedule_tree();
         }
         
         // Get current week boundaries for filtering
@@ -1624,32 +1815,6 @@ class Clubworx_REST_API {
             $next_sunday = strtotime("+{$days_until_sunday} days", $now);
             return strtotime('midnight', $next_sunday);
         }
-    }
-    
-    /**
-     * Fallback schedule when ClubWorx is unavailable.
-     * Optional JSON in settings; otherwise empty structure.
-     */
-    private function get_fallback_schedule() {
-        $settings = get_option('clubworx_integration_settings', array());
-        if (!empty($settings['fallback_schedule_json'])) {
-            $decoded = json_decode($settings['fallback_schedule_json'], true);
-            if (is_array($decoded) && !empty($decoded)) {
-                return $decoded;
-            }
-        }
-
-        return array(
-            'kids' => array(
-                'under6' => array(),
-                'over6' => array(),
-            ),
-            'adults' => array(
-                'general' => array(),
-                'foundations' => array(),
-            ),
-            'women' => array(),
-        );
     }
     
     /**
@@ -2059,9 +2224,13 @@ class Clubworx_REST_API {
     /**
      * Send booking notification email
      */
-    private function send_booking_notification($booking_data, $response_data) {
-        $settings = get_option('clubworx_integration_settings', array());
-        $admin_email = isset($settings['admin_email']) ? $settings['admin_email'] : get_option('admin_email');
+    private function send_booking_notification($booking_data, $response_data, $location = null) {
+        if (!is_array($location)) {
+            $location = Clubworx_Locations::get(Clubworx_Locations::get_default_slug());
+        }
+        $admin_email = ($location && !empty($location['email']['admin_email']))
+            ? $location['email']['admin_email']
+            : get_option('admin_email');
         
         // Enhance booking data with prospect information if available
         $enhanced_data = $this->get_enhanced_booking_data($booking_data);
@@ -2098,9 +2267,13 @@ class Clubworx_REST_API {
     /**
      * Send prospect notification email
      */
-    private function send_prospect_notification($prospect_data, $response_data) {
-        $settings = get_option('clubworx_integration_settings', array());
-        $admin_email = isset($settings['admin_email']) ? $settings['admin_email'] : get_option('admin_email');
+    private function send_prospect_notification($prospect_data, $response_data, $location = null) {
+        if (!is_array($location)) {
+            $location = Clubworx_Locations::get(Clubworx_Locations::get_default_slug());
+        }
+        $admin_email = ($location && !empty($location['email']['admin_email']))
+            ? $location['email']['admin_email']
+            : get_option('admin_email');
         
         $first_name = isset($prospect_data['first_name']) ? $prospect_data['first_name'] : 
                      (isset($prospect_data['personal']['firstName']) ? $prospect_data['personal']['firstName'] : 'Unknown');
@@ -2175,11 +2348,28 @@ class Clubworx_REST_API {
      */
     public function test_email($request) {
         $data = $request->get_json_params();
+        if (!is_array($data)) {
+            $data = array();
+        }
+
+        $slug = isset($data['account']) ? sanitize_key($data['account']) : '';
+        if ($slug === '') {
+            $slug = Clubworx_Locations::get_default_slug();
+        }
+        $loc = Clubworx_Locations::get($slug);
+        if ($loc === null) {
+            return new WP_REST_Response(array(
+                'success' => false,
+                'message' => 'Unknown Clubworx location',
+            ), 400);
+        }
+
         $test_email = isset($data['email']) ? sanitize_email($data['email']) : '';
-        
+
         if (empty($test_email)) {
-            $settings = get_option('clubworx_integration_settings', array());
-            $test_email = isset($settings['admin_email']) ? $settings['admin_email'] : get_option('admin_email');
+            $test_email = !empty($loc['email']['admin_email'])
+                ? $loc['email']['admin_email']
+                : get_option('admin_email');
         }
         
         // Validate email address
@@ -2208,8 +2398,11 @@ class Clubworx_REST_API {
             $mail_error = $wp_error->get_error_message();
         }, 10, 1);
         
-        // Attempt to send email
-        $result = wp_mail($test_email, $subject, $message);
+        // Attempt to send email (per-location SMTP via Clubworx_SMTP_Context)
+        $result = false;
+        Clubworx_SMTP_Context::with_location($loc, function () use (&$result, $test_email, $subject, $message) {
+            $result = wp_mail($test_email, $subject, $message);
+        });
         
         // Get PHPMailer error if available
         global $phpmailer;
@@ -2299,20 +2492,20 @@ class Clubworx_REST_API {
         }
         
         $diagnostics['smtp_plugins_active'] = $active_smtp_plugins;
-        
-        // Check if plugin SMTP is configured
-        $settings = get_option('clubworx_integration_settings', array());
-        $plugin_smtp_enabled = isset($settings['smtp_enabled']) && $settings['smtp_enabled'];
-        $plugin_smtp_configured = $plugin_smtp_enabled && !empty($settings['smtp_host']) && !empty($settings['smtp_port']);
-        
+
+        $def_loc = Clubworx_Locations::get(Clubworx_Locations::get_default_slug());
+        $smtp = ($def_loc && !empty($def_loc['smtp']) && is_array($def_loc['smtp'])) ? $def_loc['smtp'] : array();
+        $plugin_smtp_enabled = !empty($smtp['enabled']);
+        $plugin_smtp_configured = $plugin_smtp_enabled && !empty($smtp['host']) && !empty($smtp['port']);
+
         $diagnostics['plugin_smtp_enabled'] = $plugin_smtp_enabled;
         $diagnostics['plugin_smtp_configured'] = $plugin_smtp_configured;
         $diagnostics['smtp_configured'] = !empty($active_smtp_plugins) || $plugin_smtp_configured;
-        
+
         if ($plugin_smtp_configured) {
-            $diagnostics['plugin_smtp_host'] = isset($settings['smtp_host']) ? $settings['smtp_host'] : '';
-            $diagnostics['plugin_smtp_port'] = isset($settings['smtp_port']) ? $settings['smtp_port'] : '';
-            $diagnostics['plugin_smtp_encryption'] = isset($settings['smtp_encryption']) ? $settings['smtp_encryption'] : '';
+            $diagnostics['plugin_smtp_host'] = isset($smtp['host']) ? $smtp['host'] : '';
+            $diagnostics['plugin_smtp_port'] = isset($smtp['port']) ? $smtp['port'] : '';
+            $diagnostics['plugin_smtp_encryption'] = isset($smtp['encryption']) ? $smtp['encryption'] : '';
         }
         
         // Check PHPMailer
@@ -2336,8 +2529,9 @@ class Clubworx_REST_API {
      * Get mail troubleshooting suggestions
      */
     private function get_mail_troubleshooting_suggestions() {
-        $settings = get_option('clubworx_integration_settings', array());
-        $plugin_smtp_enabled = isset($settings['smtp_enabled']) && $settings['smtp_enabled'];
+        $def_loc = Clubworx_Locations::get(Clubworx_Locations::get_default_slug());
+        $smtp = ($def_loc && !empty($def_loc['smtp']) && is_array($def_loc['smtp'])) ? $def_loc['smtp'] : array();
+        $plugin_smtp_enabled = !empty($smtp['enabled']);
         
         $suggestions = array();
         
@@ -2507,21 +2701,35 @@ class Clubworx_REST_API {
             'show_filters' => 'true',
             'show_now_banner' => 'true',
             'default_duration_minutes' => '',
+            'account' => '',
         ), $atts);
-        
-        // Get the schedule data
-        $schedule = $this->get_clubworx_schedule();
-        
+
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+        $slugs = Clubworx_Locations::expand_account_slugs(isset($atts['account']) ? $atts['account'] : '', $post_id ? $post_id : null);
+
+        $slug_schedules = array();
+        foreach ($slugs as $slug) {
+            $slug_schedules[$slug] = $this->get_clubworx_schedule($slug);
+        }
+        $schedule = $this->merge_schedule_trees($slug_schedules);
+
         if (!$schedule || empty($schedule)) {
             return '<div class="clubworx-timetable-error">Schedule not available at this time.</div>';
         }
-        
-        $settings = get_option('clubworx_integration_settings', array());
-        $default_tz = isset($settings['timetable_timezone']) ? $settings['timetable_timezone'] : 'Australia/Sydney';
+
+        $loc_style = Clubworx_Locations::get($slugs[0]);
+        $tz_default = function_exists('wp_timezone_string') ? wp_timezone_string() : 'UTC';
+        $tt_defaults = Clubworx_Locations::default_location_data($tz_default);
+        $tt = ($loc_style && isset($loc_style['timetable']) && is_array($loc_style['timetable']))
+            ? $loc_style['timetable']
+            : $tt_defaults['timetable'];
+
+        $default_tz = isset($tt['timezone']) ? $tt['timezone'] : 'Australia/Sydney';
         $timezone = !empty($atts['timezone']) ? $atts['timezone'] : $default_tz;
         $timezone = $this->sanitize_timetable_timezone($timezone);
-        
-        $default_dur = isset($settings['timetable_default_duration_minutes']) ? absint($settings['timetable_default_duration_minutes']) : 60;
+
+        $default_dur = isset($tt['default_duration_minutes']) ? absint($tt['default_duration_minutes']) : 60;
         if ($default_dur < 15 || $default_dur > 240) {
             $default_dur = 60;
         }
@@ -2529,6 +2737,13 @@ class Clubworx_REST_API {
         if ($atts['default_duration_minutes'] !== '' && is_numeric($atts['default_duration_minutes'])) {
             $duration_minutes = max(15, min(240, intval($atts['default_duration_minutes'])));
         }
+
+        $tt_colors = array(
+            'primary' => isset($tt['primary_color']) ? $tt['primary_color'] : '#1914a6',
+            'accent' => isset($tt['accent_color']) ? $tt['accent_color'] : '#ffbe00',
+            'text' => isset($tt['text_color']) ? $tt['text_color'] : '#333333',
+            'surface' => isset($tt['surface_color']) ? $tt['surface_color'] : '#ffffff',
+        );
         
         $show_filters = ($atts['show_filters'] === 'true' || $atts['show_filters'] === true || $atts['show_filters'] === '1');
         $show_now_banner = ($atts['show_now_banner'] === 'true' || $atts['show_now_banner'] === true || $atts['show_now_banner'] === '1');
@@ -2730,6 +2945,7 @@ class Clubworx_REST_API {
                 'duration_minutes' => $duration_minutes,
                 'show_filters' => $show_filters,
                 'show_now_banner' => $show_now_banner,
+                'tt_colors' => $tt_colors,
                 'day_labels' => array(
                     'monday' => __('Monday', 'clubworx-integration'),
                     'tuesday' => __('Tuesday', 'clubworx-integration'),
@@ -2858,11 +3074,11 @@ class Clubworx_REST_API {
         }
         
         $week_json = $this->build_timetable_week_classes_json($schedule);
-        $settings = get_option('clubworx_integration_settings', array());
-        $tt_primary = (!empty($settings['timetable_primary_color']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $settings['timetable_primary_color'])) ? $settings['timetable_primary_color'] : '#1914a6';
-        $tt_accent = (!empty($settings['timetable_accent_color']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $settings['timetable_accent_color'])) ? $settings['timetable_accent_color'] : '#ffbe00';
-        $tt_text = (!empty($settings['timetable_text_color']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $settings['timetable_text_color'])) ? $settings['timetable_text_color'] : '#333333';
-        $tt_surface = (!empty($settings['timetable_surface_color']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $settings['timetable_surface_color'])) ? $settings['timetable_surface_color'] : '#ffffff';
+        $tc = isset($opts['tt_colors']) && is_array($opts['tt_colors']) ? $opts['tt_colors'] : array();
+        $tt_primary = (!empty($tc['primary']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['primary'])) ? $tc['primary'] : '#1914a6';
+        $tt_accent = (!empty($tc['accent']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['accent'])) ? $tc['accent'] : '#ffbe00';
+        $tt_text = (!empty($tc['text']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['text'])) ? $tc['text'] : '#333333';
+        $tt_surface = (!empty($tc['surface']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['surface'])) ? $tc['surface'] : '#ffffff';
         
         $client_config = array(
             'instanceId' => $opts['instance_id'],
@@ -2951,11 +3167,12 @@ class Clubworx_REST_API {
             'button_link' => '#booking-form',
             'highlight' => '', // comma-separated plan names to highlight
             'title' => 'Membership Plans',
-            'show_title' => 'true'
+            'show_title' => 'true',
+            'account' => '',
         ), $atts);
-        
+
         // Get membership plans
-        $plans_response = $this->get_membership_plans_from_api();
+        $plans_response = $this->get_membership_plans_from_api(isset($atts['account']) ? $atts['account'] : '');
         $plans = isset($plans_response['plans']) ? $plans_response['plans'] : array();
         
         if (empty($plans)) {
@@ -2984,9 +3201,11 @@ class Clubworx_REST_API {
     /**
      * Get membership plans from API
      */
-    private function get_membership_plans_from_api() {
-        // Make internal API call to get plans
+    private function get_membership_plans_from_api($account = '') {
         $api_url = rest_url('clubworx/v1/membership-plans');
+        if (is_string($account) && $account !== '') {
+            $api_url = add_query_arg('account', $account, $api_url);
+        }
         $response = wp_remote_get($api_url, array(
             'timeout' => 30,
         ));
@@ -3323,105 +3542,95 @@ class Clubworx_REST_API {
     }
     
     /**
-     * Get membership plans from ClubWorx
+     * Get membership plans from ClubWorx (supports multiple accounts via ?account=).
      */
     public function get_membership_plans($request) {
         $refresh = $request->get_param('refresh');
-        
-        // Check cache first unless refresh is requested
+        $account_raw = $request->get_param('account');
+        $account_raw = is_string($account_raw) ? $account_raw : '';
+        $slugs = Clubworx_Locations::expand_account_slugs($account_raw, null);
+
+        $aggregate_cache_key = 'clubworx_membership_plans_agg_' . md5(implode(',', $slugs));
         if (!$refresh) {
-            $cached_plans = get_transient('clubworx_membership_plans');
-            if ($cached_plans !== false) {
-                error_log('Clubworx Integration: Returning cached membership plans');
+            $cached_agg = get_transient($aggregate_cache_key);
+            if ($cached_agg !== false) {
                 return new WP_REST_Response(array(
                     'success' => true,
-                    'plans' => $cached_plans,
-                    'cached' => true
+                    'plans' => $cached_agg,
+                    'cached' => true,
+                    'accounts' => $slugs,
                 ), 200);
             }
         }
-        
-        // Get ClubWorx settings
-        $settings = get_option('clubworx_integration_settings', array());
-        $clubworx_api_url = isset($settings['clubworx_api_url']) ? $settings['clubworx_api_url'] : '';
-        $clubworx_api_key = isset($settings['clubworx_api_key']) ? $settings['clubworx_api_key'] : '';
-        
-        if (empty($clubworx_api_url) || empty($clubworx_api_key)) {
-            error_log('Clubworx Integration: ClubWorx API not configured for membership plans');
-            return new WP_REST_Response(array(
-                'success' => false,
-                'message' => 'ClubWorx API not configured',
-                'plans' => $this->get_fallback_plans()
-            ), 200);
+
+        $all_plans = array();
+
+        foreach ($slugs as $slug) {
+            $loc = Clubworx_Locations::get($slug);
+            if (!$loc || empty($loc['api_url']) || empty($loc['api_key'])) {
+                continue;
+            }
+
+            $single_cache_key = 'clubworx_membership_plans_' . sanitize_key($slug);
+            $plans = false;
+            if (!$refresh) {
+                $plans = get_transient($single_cache_key);
+            }
+
+            if ($plans === false || !is_array($plans)) {
+                $base_url = rtrim($loc['api_url'], '/');
+                if (!str_ends_with($base_url, '/api/v2')) {
+                    $base_url .= '/api/v2';
+                }
+                $api_url = $base_url . '/membership_plans?account_key=' . urlencode($loc['api_key']);
+
+                $response = wp_remote_get($api_url, array(
+                    'headers' => array(
+                        'Accept' => 'application/json',
+                    ),
+                    'timeout' => 30,
+                ));
+
+                if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+                    continue;
+                }
+
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                if (!is_array($data)) {
+                    continue;
+                }
+
+                $plans = $this->parse_membership_plans($data);
+                if (!is_array($plans)) {
+                    $plans = array();
+                }
+
+                set_transient($single_cache_key, $plans, 12 * HOUR_IN_SECONDS);
+            }
+
+            $label = isset($loc['label']) ? $loc['label'] : $slug;
+            foreach ($plans as $p) {
+                if (!is_array($p)) {
+                    continue;
+                }
+                $p['location_slug'] = $slug;
+                $p['location_label'] = $label;
+                $all_plans[] = $p;
+            }
         }
-        
-        // Construct API URL
-        $base_url = rtrim($clubworx_api_url, '/');
-        if (!str_ends_with($base_url, '/api/v2')) {
-            $base_url .= '/api/v2';
+
+        if (empty($all_plans)) {
+            $all_plans = $this->get_fallback_plans();
         }
-        $api_url = $base_url . '/membership_plans?account_key=' . urlencode($clubworx_api_key);
-        
-        error_log('Clubworx Integration: Fetching membership plans from: ' . $api_url);
-        
-        // Make API request
-        $response = wp_remote_get($api_url, array(
-            'headers' => array(
-                'Accept' => 'application/json',
-            ),
-            'timeout' => 30,
-        ));
-        
-        if (is_wp_error($response)) {
-            error_log('Clubworx Integration: Membership plans API error: ' . $response->get_error_message());
-            return new WP_REST_Response(array(
-                'success' => false,
-                'message' => 'Failed to fetch membership plans',
-                'plans' => $this->get_fallback_plans()
-            ), 200);
-        }
-        
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        
-        error_log('Clubworx Integration: Membership plans API response status: ' . $status_code);
-        error_log('Clubworx Integration: Membership plans API response body: ' . $body);
-        
-        if ($status_code !== 200) {
-            error_log('Clubworx Integration: Membership plans API returned status ' . $status_code);
-            return new WP_REST_Response(array(
-                'success' => false,
-                'message' => 'ClubWorx API returned error status ' . $status_code,
-                'plans' => $this->get_fallback_plans()
-            ), 200);
-        }
-        
-        $data = json_decode($body, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('Clubworx Integration: Failed to parse membership plans JSON: ' . json_last_error_msg());
-            return new WP_REST_Response(array(
-                'success' => false,
-                'message' => 'Invalid JSON response from ClubWorx',
-                'plans' => $this->get_fallback_plans()
-            ), 200);
-        }
-        
-        // Parse and format plans
-        $plans = $this->parse_membership_plans($data);
-        
-        // If no plans were parsed, use fallback plans
-        if (empty($plans)) {
-            error_log('Clubworx Integration: No plans parsed from ClubWorx API, using fallback plans');
-            $plans = $this->get_fallback_plans();
-        }
-        
-        // Cache for 12 hours
-        set_transient('clubworx_membership_plans', $plans, 12 * HOUR_IN_SECONDS);
-        
+
+        set_transient($aggregate_cache_key, $all_plans, 12 * HOUR_IN_SECONDS);
+
         return new WP_REST_Response(array(
             'success' => true,
-            'plans' => $plans,
-            'cached' => false
+            'plans' => $all_plans,
+            'cached' => false,
+            'accounts' => $slugs,
         ), 200);
     }
     

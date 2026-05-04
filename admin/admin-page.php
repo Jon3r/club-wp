@@ -42,12 +42,6 @@ if ($bookings_exist) {
     }
 }
 
-// Get recent bookings
-$recent_bookings = array();
-if ($bookings_exist) {
-    $recent_bookings = $wpdb->get_results("SELECT * FROM $bookings_table ORDER BY created_at DESC LIMIT 10");
-}
-
 // Get attribution stats
 $attribution_stats = array();
 if ($attribution_exist) {
@@ -62,40 +56,80 @@ if ($attribution_exist) {
 }
 
 $settings = get_option('clubworx_integration_settings', array());
+
+$all_locs = class_exists('Clubworx_Locations') ? Clubworx_Locations::all() : array();
+$bookings_tab = isset($_GET['location']) ? sanitize_key(wp_unslash($_GET['location'])) : 'all';
+if ($bookings_tab !== 'all' && $bookings_tab !== '' && !isset($all_locs[$bookings_tab])) {
+    $bookings_tab = 'all';
+}
+
+$any_api_configured = false;
+foreach ($all_locs as $loc_row) {
+    if (!empty($loc_row['api_url']) && !empty($loc_row['api_key'])) {
+        $any_api_configured = true;
+        break;
+    }
+}
+
+// Get recent bookings (optional filter by location tab)
+$recent_bookings = array();
+if ($bookings_exist) {
+    if ($bookings_tab !== 'all' && $bookings_tab !== '' && isset($all_locs[$bookings_tab])) {
+        $recent_bookings = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $bookings_table WHERE account = %s ORDER BY created_at DESC LIMIT 10",
+            $bookings_tab
+        ));
+    } else {
+        $recent_bookings = $wpdb->get_results("SELECT * FROM $bookings_table ORDER BY created_at DESC LIMIT 10");
+    }
+}
+
+$rest_schedule_default_url = add_query_arg(
+    'account',
+    class_exists('Clubworx_Locations') ? Clubworx_Locations::get_default_slug() : 'primary',
+    rest_url('clubworx/v1/schedule-simple')
+);
 ?>
 
 <div class="wrap">
     <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
     
-    <?php 
-    // Check ClubWorx configuration status
-    $clubworx_configured = !empty($settings['clubworx_api_url']) && !empty($settings['clubworx_api_key']);
-    ?>
-    
-    <?php if (!$clubworx_configured): ?>
+    <?php if (!$any_api_configured) : ?>
     <div class="notice notice-warning">
-        <p><strong>⚠️ Action Required: ClubWorx API Not Configured</strong></p>
-        <p>Your booking form is currently showing <strong>static/hardcoded schedule data</strong>.</p>
+        <p><strong><?php esc_html_e('Action required: ClubWorx API not configured', 'clubworx-integration'); ?></strong></p>
+        <p><?php esc_html_e('Configure API URL and key for each location under Settings.', 'clubworx-integration'); ?></p>
         <p>
-            <a href="<?php echo admin_url('admin.php?page=clubworx-integration-settings'); ?>" class="button button-primary">
-                Configure ClubWorx API Now →
+            <a href="<?php echo esc_url(admin_url('admin.php?page=clubworx-integration-settings')); ?>" class="button button-primary">
+                <?php esc_html_e('Open settings', 'clubworx-integration'); ?>
             </a>
         </p>
     </div>
-    <?php else: ?>
+    <?php else : ?>
     <div class="notice notice-success">
-        <p><strong>✅ ClubWorx API Active</strong></p>
-        <p>Fetching live schedule data from: <code><?php echo esc_html($settings['clubworx_api_url']); ?></code></p>
-        <p><small>Data is cached for 1 hour. Use "Refresh Schedule Cache" button below to force refresh.</small></p>
+        <p><strong><?php esc_html_e('ClubWorx API active', 'clubworx-integration'); ?></strong></p>
+        <p><?php esc_html_e('Schedule data is cached per location. Use Refresh Schedule Cache to force a refresh.', 'clubworx-integration'); ?></p>
     </div>
     <?php endif; ?>
     
     <div class="clubworx-admin-tabs">
         <h2 class="nav-tab-wrapper">
-            <a href="?page=clubworx-integration" class="nav-tab nav-tab-active"><?php _e('Dashboard', 'clubworx-integration'); ?></a>
-            <a href="?page=clubworx-integration-settings" class="nav-tab"><?php _e('Settings', 'clubworx-integration'); ?></a>
+            <a href="<?php echo esc_url(admin_url('admin.php?page=clubworx-integration')); ?>" class="nav-tab nav-tab-active"><?php _e('Dashboard', 'clubworx-integration'); ?></a>
+            <a href="<?php echo esc_url(admin_url('admin.php?page=clubworx-integration-settings')); ?>" class="nav-tab"><?php _e('Settings', 'clubworx-integration'); ?></a>
         </h2>
     </div>
+
+    <?php if (!empty($all_locs)) : ?>
+    <h2 class="nav-tab-wrapper" style="margin-bottom: 16px;">
+        <a href="<?php echo esc_url(add_query_arg(array('page' => 'clubworx-integration', 'location' => 'all'), admin_url('admin.php'))); ?>" class="nav-tab<?php echo $bookings_tab === 'all' ? ' nav-tab-active' : ''; ?>"><?php esc_html_e('All locations', 'clubworx-integration'); ?></a>
+        <?php foreach ($all_locs as $slug => $loc_row) : ?>
+            <?php
+            $lbl = isset($loc_row['label']) ? $loc_row['label'] : $slug;
+            $url = add_query_arg(array('page' => 'clubworx-integration', 'location' => $slug), admin_url('admin.php'));
+            ?>
+            <a href="<?php echo esc_url($url); ?>" class="nav-tab<?php echo $bookings_tab === $slug ? ' nav-tab-active' : ''; ?>"><?php echo esc_html($lbl); ?></a>
+        <?php endforeach; ?>
+    </h2>
+    <?php endif; ?>
     
     <!-- Stats Cards -->
     <div class="clubworx-stats-grid">
@@ -171,7 +205,13 @@ $settings = get_option('clubworx_integration_settings', array());
                 <span class="dashicons dashicons-lock"></span>
                 <?php _e('Test Auth Methods', 'clubworx-integration'); ?>
             </button>
-            <a href="<?php echo admin_url('admin.php?page=clubworx-integration&export=csv'); ?>" class="clubworx-action-button">
+            <?php
+            $export_csv_url = admin_url('admin.php?page=clubworx-integration&export=csv');
+            if ($bookings_tab !== 'all' && $bookings_tab !== '') {
+                $export_csv_url = add_query_arg('location', $bookings_tab, $export_csv_url);
+            }
+            ?>
+            <a href="<?php echo esc_url($export_csv_url); ?>" class="clubworx-action-button">
                 <span class="dashicons dashicons-download"></span>
                 <?php _e('Export Bookings', 'clubworx-integration'); ?>
             </a>
@@ -194,6 +234,7 @@ $settings = get_option('clubworx_integration_settings', array());
                 <thead>
                     <tr>
                         <th><?php _e('Type', 'clubworx-integration'); ?></th>
+                        <th><?php _e('Account', 'clubworx-integration'); ?></th>
                         <th><?php _e('Date', 'clubworx-integration'); ?></th>
                         <th><?php _e('Details', 'clubworx-integration'); ?></th>
                         <th><?php _e('Source', 'clubworx-integration'); ?></th>
@@ -209,6 +250,7 @@ $settings = get_option('clubworx_integration_settings', array());
                                     <?php echo esc_html(ucfirst($booking->type)); ?>
                                 </span>
                             </td>
+                            <td><code><?php echo esc_html(isset($booking->account) ? $booking->account : 'primary'); ?></code></td>
                             <td><?php echo esc_html(mysql2date('M j, Y g:i a', $booking->created_at)); ?></td>
                             <td>
                                 <?php 
@@ -970,7 +1012,7 @@ jQuery(document).ready(function($) {
         $('#live-timetable-content').html('<div class="timetable-loading"><span class="dashicons dashicons-update dashicons-update-spin"></span> Loading live timetable from ClubWorx...</div>');
         
         $.ajax({
-            url: '<?php echo rest_url('clubworx/v1/schedule-simple'); ?>',
+            url: '<?php echo esc_url($rest_schedule_default_url); ?>',
             method: 'GET',
             headers: {
                 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>'
@@ -1144,7 +1186,7 @@ jQuery(document).ready(function($) {
         button.contents().last()[0].textContent = '<?php _e('Testing...', 'clubworx-integration'); ?>';
         
         $.ajax({
-            url: '<?php echo rest_url('clubworx/v1/schedule-simple'); ?>',
+            url: '<?php echo esc_url($rest_schedule_default_url); ?>',
             method: 'GET',
             headers: {
                 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>'
@@ -1588,7 +1630,7 @@ jQuery(document).ready(function($) {
         $('#shortcode-preview-content').html('<div class="preview-loading"><span class="dashicons dashicons-update dashicons-update-spin"></span> Loading shortcode preview...</div>');
         
         $.ajax({
-            url: '<?php echo rest_url('clubworx/v1/schedule-simple'); ?>',
+            url: '<?php echo esc_url($rest_schedule_default_url); ?>',
             method: 'GET',
             headers: {
                 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>'
@@ -1842,7 +1884,9 @@ jQuery(document).ready(function($) {
                 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>',
                 'Content-Type': 'application/json'
             },
-            data: JSON.stringify({})
+            data: JSON.stringify({
+                account: '<?php echo esc_js(class_exists('Clubworx_Locations') ? Clubworx_Locations::get_default_slug() : 'primary'); ?>'
+            })
         }).done(function(response) {
             console.log('Test Email Response:', response);
             

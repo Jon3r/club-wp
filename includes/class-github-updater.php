@@ -31,11 +31,14 @@ class Clubworx_GitHub_Updater {
         
         // Allow override from settings (optional)
         $settings = get_option('clubworx_integration_settings', array());
-        if (isset($settings['github_username']) && !empty($settings['github_username'])) {
-            $this->github_username = $settings['github_username'];
+        $gh = isset($settings['github']) && is_array($settings['github']) ? $settings['github'] : array();
+        $gh_user = isset($gh['username']) ? $gh['username'] : (isset($settings['github_username']) ? $settings['github_username'] : '');
+        $gh_repo = isset($gh['repo']) ? $gh['repo'] : (isset($settings['github_repo']) ? $settings['github_repo'] : '');
+        if ($gh_user !== '') {
+            $this->github_username = $gh_user;
         }
-        if (isset($settings['github_repo']) && !empty($settings['github_repo'])) {
-            $this->github_repo = $settings['github_repo'];
+        if ($gh_repo !== '') {
+            $this->github_repo = $gh_repo;
         }
         
         // Only hook into update system if GitHub is configured

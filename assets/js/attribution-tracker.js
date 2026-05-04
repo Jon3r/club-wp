@@ -10,7 +10,21 @@ class AttributionTracker {
     }
 
     getConfig() {
-        return typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
+        const cfg = typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
+        const form = document.getElementById('trialBookingForm');
+        const wrap = form ? form.closest('.clubworx-booking-wrapper') : document.querySelector('.clubworx-booking-wrapper');
+        let slug = cfg.defaultLocation || 'primary';
+        const ds = wrap && wrap.getAttribute('data-account');
+        if (ds && String(ds).trim()) {
+            slug = String(ds).trim();
+        } else if (form) {
+            const hid = form.querySelector('input[name="clubworx_account"]');
+            if (hid && hid.value && String(hid.value).trim()) {
+                slug = String(hid.value).trim();
+            }
+        }
+        const loc = cfg.locations && cfg.locations[slug] ? cfg.locations[slug] : {};
+        return Object.assign({}, cfg, loc);
     }
 
     getAnalyticsMode() {

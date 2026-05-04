@@ -72,6 +72,10 @@ class Clubworx_Integration {
         // Activation and deactivation hooks
         register_activation_hook(__FILE__, array($this, 'activate'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
+
+        add_action('plugins_loaded', array($this, 'maybe_upgrade_database'), 5);
+        add_action('add_meta_boxes', array($this, 'register_location_meta_box'), 10);
+        add_action('save_post', array($this, 'save_location_meta_box'), 10, 2);
         
         // Add shortcode
         add_shortcode('clubworx_trial_booking', array($this, 'render_booking_form'));
@@ -99,6 +103,9 @@ class Clubworx_Integration {
      * Load plugin dependencies
      */
     private function load_dependencies() {
+        require_once CLUBWORX_INTEGRATION_PLUGIN_DIR . 'includes/class-locations.php';
+        require_once CLUBWORX_INTEGRATION_PLUGIN_DIR . 'includes/class-smtp-context.php';
+
         // Load GitHub updater (needed for REST API update checks)
         require_once CLUBWORX_INTEGRATION_PLUGIN_DIR . 'includes/class-github-updater.php';
         Clubworx_GitHub_Updater::get_instance();
@@ -118,39 +125,127 @@ class Clubworx_Integration {
      * Plugin activation
      */
     public function activate() {
+        require_once CLUBWORX_INTEGRATION_PLUGIN_DIR . 'includes/class-locations.php';
+
         $tz = function_exists('wp_timezone_string') ? wp_timezone_string() : 'UTC';
         if (empty($tz)) {
             $tz = 'UTC';
         }
-        $host = parse_url(home_url(), PHP_URL_HOST);
+
+        $primary = Clubworx_Locations::default_location_data($tz, __('Primary location', 'clubworx-integration'));
+
         $default_options = array(
-            'analytics_mode' => 'none',
-            'ga4_measurement_id' => '',
-            'gtm_container_id' => '',
-            'ga4_debug_mode' => false,
-            'ga4_currency' => 'USD',
-            'club_display_name' => get_bloginfo('name'),
-            'club_website_url' => home_url('/'),
-            'post_booking_redirect_url' => '',
-            'trial_event_description_intro' => 'Trial class',
-            'ics_uid_domain' => $host ? $host : 'localhost',
-            'fallback_schedule_json' => '',
-            'ga4_api_secret' => '',
-            'clubworx_api_key' => '',
-            'clubworx_api_url' => '',
-            'email_notifications' => true,
-            'admin_email' => get_option('admin_email'),
-            'timetable_timezone' => $tz,
-            'timetable_default_duration_minutes' => 60,
-            'timetable_primary_color' => '#1914a6',
-            'timetable_accent_color' => '#ffbe00',
-            'timetable_text_color' => '#333333',
-            'timetable_surface_color' => '#ffffff',
+            'default_location' => 'primary',
+            'locations' => array(
+                'primary' => $primary,
+            ),
+            'github' => array(
+                'token' => '',
+                'username' => '',
+                'repo' => '',
+            ),
         );
 
         add_option('clubworx_integration_settings', $default_options);
 
+        $this->upgrade_bookings_table();
+
         flush_rewrite_rules();
+    }
+
+    /**
+     * Migration + DB column for location/account on bookings.
+     */
+    public function maybe_upgrade_database() {
+        require_once CLUBWORX_INTEGRATION_PLUGIN_DIR . 'includes/class-locations.php';
+        Clubworx_Locations::migrate_legacy_if_needed();
+        $this->upgrade_bookings_table();
+    }
+
+    /**
+     * Ensure wp_clubworx_bookings has an account column.
+     */
+    private function upgrade_bookings_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'clubworx_bookings';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name)) !== $table_name) {
+            return;
+        }
+        $col = $wpdb->get_results("SHOW COLUMNS FROM {$table_name} LIKE 'account'");
+        if (!empty($col)) {
+            return;
+        }
+        $wpdb->query("ALTER TABLE {$table_name} ADD COLUMN account varchar(191) NOT NULL DEFAULT 'primary' AFTER type");
+        $wpdb->query("ALTER TABLE {$table_name} ADD KEY account (account)");
+        $wpdb->query("UPDATE {$table_name} SET account = 'primary' WHERE account = '' OR account IS NULL");
+    }
+
+    /**
+     * Meta box: pick default Clubworx location for this page.
+     */
+    public function register_location_meta_box() {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if ($screen && method_exists($screen, 'is_block_editor') && $screen->is_block_editor()) {
+            return;
+        }
+        foreach (array('page', 'post') as $type) {
+            add_meta_box(
+                'clubworx_location_meta',
+                __('Clubworx location', 'clubworx-integration'),
+                array($this, 'render_location_meta_box'),
+                $type,
+                'side',
+                'default'
+            );
+        }
+    }
+
+    /**
+     * @param WP_Post $post
+     */
+    public function render_location_meta_box($post) {
+        wp_nonce_field('clubworx_location_meta_save', 'clubworx_location_meta_nonce');
+        $val = get_post_meta($post->ID, Clubworx_Locations::META_KEY, true);
+        $locations = Clubworx_Locations::all();
+        echo '<p class="description">' . esc_html__('Used when the shortcode does not set account="…". One GA4/GTM container loads per page — pick the location that should own analytics here.', 'clubworx-integration') . '</p>';
+        echo '<label for="clubworx_location_select" class="screen-reader-text">' . esc_html__('Location', 'clubworx-integration') . '</label>';
+        echo '<select name="clubworx_location_meta" id="clubworx_location_select" class="widefat">';
+        echo '<option value="">' . esc_html__('Use site default location', 'clubworx-integration') . '</option>';
+        foreach ($locations as $slug => $loc) {
+            $label = isset($loc['label']) ? $loc['label'] : $slug;
+            echo '<option value="' . esc_attr($slug) . '"' . selected($val, $slug, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select>';
+    }
+
+    /**
+     * @param int      $post_id
+     * @param WP_Post $post
+     */
+    public function save_location_meta_box($post_id, $post) {
+        if (!isset($_POST['clubworx_location_meta_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['clubworx_location_meta_nonce'])), 'clubworx_location_meta_save')) {
+            return;
+        }
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+        if (!isset($_POST['clubworx_location_meta'])) {
+            return;
+        }
+        $raw = sanitize_text_field(wp_unslash($_POST['clubworx_location_meta']));
+        if ($raw === '') {
+            delete_post_meta($post_id, Clubworx_Locations::META_KEY);
+            return;
+        }
+        $slug = sanitize_key($raw);
+        $all = Clubworx_Locations::all();
+        if (!isset($all[$slug])) {
+            return;
+        }
+        update_post_meta($post_id, Clubworx_Locations::META_KEY, $slug);
     }
     
     /**
@@ -202,45 +297,97 @@ class Clubworx_Integration {
     }
 
     /**
+     * Flat script payload for one location (analytics + branding).
+     *
+     * @param array<string,mixed> $loc
+     * @return array<string,mixed>
+     */
+    private function build_public_location_payload($loc) {
+        $host = parse_url(home_url(), PHP_URL_HOST);
+        $a = isset($loc['analytics']) && is_array($loc['analytics']) ? $loc['analytics'] : array();
+        $b = isset($loc['branding']) && is_array($loc['branding']) ? $loc['branding'] : array();
+        $mode = isset($a['mode']) ? $a['mode'] : 'none';
+
+        return array(
+            'analyticsMode' => in_array($mode, array('none', 'ga4', 'gtm'), true) ? $mode : 'none',
+            'ga4MeasurementId' => isset($a['ga4_measurement_id']) ? $a['ga4_measurement_id'] : '',
+            'gtmContainerId' => isset($a['gtm_container_id']) ? $a['gtm_container_id'] : '',
+            'ga4DebugMode' => !empty($a['ga4_debug_mode']),
+            'ga4Currency' => isset($a['ga4_currency']) ? $a['ga4_currency'] : 'USD',
+            'clubDisplayName' => isset($b['club_display_name']) ? $b['club_display_name'] : get_bloginfo('name'),
+            'clubWebsiteUrl' => isset($b['club_website_url']) ? $b['club_website_url'] : home_url('/'),
+            'postBookingRedirectUrl' => isset($b['post_booking_redirect_url']) ? $b['post_booking_redirect_url'] : '',
+            'trialEventIntro' => isset($b['trial_event_description_intro']) ? $b['trial_event_description_intro'] : __('Trial class', 'clubworx-integration'),
+            'icsUidDomain' => isset($b['ics_uid_domain']) ? $b['ics_uid_domain'] : ($host ? $host : 'localhost'),
+        );
+    }
+
+    /**
      * Settings exposed to front-end scripts (attribution + booking).
      *
      * @return array<string,mixed>
      */
     private function get_public_script_settings() {
-        $settings = get_option('clubworx_integration_settings', array());
-        $mode = isset($settings['analytics_mode']) ? $settings['analytics_mode'] : 'none';
-        $host = parse_url(home_url(), PHP_URL_HOST);
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+        $default_slug = Clubworx_Locations::get_default_slug();
 
-        return array(
+        $locations_payload = array();
+        foreach (Clubworx_Locations::all() as $slug => $loc) {
+            $locations_payload[$slug] = $this->build_public_location_payload($loc);
+        }
+
+        $resolved = Clubworx_Locations::resolve_slug_for_post($post_id ? $post_id : null);
+        $resolved_payload = isset($locations_payload[$resolved])
+            ? $locations_payload[$resolved]
+            : ($locations_payload[$default_slug] ?? reset($locations_payload));
+
+        $base = array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'restUrl' => rest_url('clubworx/v1/'),
             'restNonce' => wp_create_nonce('wp_rest'),
-            'analyticsMode' => in_array($mode, array('none', 'ga4', 'gtm'), true) ? $mode : 'none',
-            'ga4MeasurementId' => isset($settings['ga4_measurement_id']) ? $settings['ga4_measurement_id'] : '',
-            'gtmContainerId' => isset($settings['gtm_container_id']) ? $settings['gtm_container_id'] : '',
-            'ga4DebugMode' => !empty($settings['ga4_debug_mode']),
-            'ga4Currency' => isset($settings['ga4_currency']) ? $settings['ga4_currency'] : 'USD',
-            'clubDisplayName' => isset($settings['club_display_name']) ? $settings['club_display_name'] : get_bloginfo('name'),
-            'clubWebsiteUrl' => isset($settings['club_website_url']) ? $settings['club_website_url'] : home_url('/'),
-            'postBookingRedirectUrl' => isset($settings['post_booking_redirect_url']) ? $settings['post_booking_redirect_url'] : '',
-            'trialEventIntro' => isset($settings['trial_event_description_intro']) ? $settings['trial_event_description_intro'] : __('Trial class', 'clubworx-integration'),
-            'icsUidDomain' => isset($settings['ics_uid_domain']) ? $settings['ics_uid_domain'] : ($host ? $host : 'localhost'),
+            'defaultLocation' => $default_slug,
+            'locations' => $locations_payload,
         );
+
+        if (!is_array($resolved_payload)) {
+            $resolved_payload = array(
+                'analyticsMode' => 'none',
+                'ga4MeasurementId' => '',
+                'gtmContainerId' => '',
+                'ga4DebugMode' => false,
+                'ga4Currency' => 'USD',
+                'clubDisplayName' => get_bloginfo('name'),
+                'clubWebsiteUrl' => home_url('/'),
+                'postBookingRedirectUrl' => '',
+                'trialEventIntro' => __('Trial class', 'clubworx-integration'),
+                'icsUidDomain' => parse_url(home_url(), PHP_URL_HOST) ?: 'localhost',
+            );
+        }
+
+        return array_merge($base, $resolved_payload);
     }
 
     /**
      * Load either direct GA4 (gtag) or GTM — never both (avoids duplicate GA4 hits).
      */
     private function add_analytics_output() {
-        $settings = get_option('clubworx_integration_settings', array());
-        $mode = isset($settings['analytics_mode']) ? $settings['analytics_mode'] : 'none';
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+        $slug = Clubworx_Locations::resolve_slug_for_post($post_id ? $post_id : null);
+        $loc = Clubworx_Locations::get($slug);
+        if ($loc === null) {
+            return;
+        }
+        $a = isset($loc['analytics']) && is_array($loc['analytics']) ? $loc['analytics'] : array();
+        $mode = isset($a['mode']) ? $a['mode'] : 'none';
 
         if ($mode === 'ga4') {
-            $measurement_id = isset($settings['ga4_measurement_id']) ? trim($settings['ga4_measurement_id']) : '';
+            $measurement_id = isset($a['ga4_measurement_id']) ? trim($a['ga4_measurement_id']) : '';
             if ($measurement_id === '') {
                 return;
             }
-            $debug_mode = !empty($settings['ga4_debug_mode']);
+            $debug_mode = !empty($a['ga4_debug_mode']);
 
             add_action(
                 'wp_head',
@@ -275,7 +422,7 @@ class Clubworx_Integration {
         }
 
         if ($mode === 'gtm') {
-            $gtm = isset($settings['gtm_container_id']) ? trim($settings['gtm_container_id']) : '';
+            $gtm = isset($a['gtm_container_id']) ? trim($a['gtm_container_id']) : '';
             if (!preg_match('/^GTM-[A-Z0-9]+$/', $gtm)) {
                 return;
             }
@@ -309,11 +456,18 @@ class Clubworx_Integration {
         if (self::$gtm_noscript_printed) {
             return;
         }
-        $settings = get_option('clubworx_integration_settings', array());
-        if (!isset($settings['analytics_mode']) || $settings['analytics_mode'] !== 'gtm') {
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+        $slug = Clubworx_Locations::resolve_slug_for_post($post_id ? $post_id : null);
+        $loc = Clubworx_Locations::get($slug);
+        if ($loc === null) {
             return;
         }
-        $gtm = isset($settings['gtm_container_id']) ? trim($settings['gtm_container_id']) : '';
+        $a = isset($loc['analytics']) && is_array($loc['analytics']) ? $loc['analytics'] : array();
+        if (!isset($a['mode']) || $a['mode'] !== 'gtm') {
+            return;
+        }
+        $gtm = isset($a['gtm_container_id']) ? trim($a['gtm_container_id']) : '';
         if (!preg_match('/^GTM-[A-Z0-9]+$/', $gtm)) {
             return;
         }
@@ -345,7 +499,12 @@ class Clubworx_Integration {
         // Parse shortcode attributes
         $atts = shortcode_atts(array(
             'show_header' => 'false',
+            'account' => '',
         ), $atts, 'clubworx_trial_booking');
+
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+        $clubworx_location_slug = Clubworx_Locations::resolve_single_account_from_shortcode($atts['account'], $post_id ? $post_id : null);
         
         // Start output buffering
         ob_start();
@@ -433,8 +592,18 @@ class Clubworx_Integration {
             wp_die(__('No bookings table found.', 'clubworx-integration'));
         }
         
-        // Get all bookings
-        $bookings = $wpdb->get_results("SELECT * FROM $bookings_table ORDER BY created_at DESC", ARRAY_A);
+        $location_filter = isset($_GET['location']) ? sanitize_key(wp_unslash($_GET['location'])) : '';
+        if ($location_filter === 'all') {
+            $location_filter = '';
+        }
+        if ($location_filter !== '') {
+            $bookings = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM $bookings_table WHERE account = %s ORDER BY created_at DESC",
+                $location_filter
+            ), ARRAY_A);
+        } else {
+            $bookings = $wpdb->get_results("SELECT * FROM $bookings_table ORDER BY created_at DESC", ARRAY_A);
+        }
         
         // Clear all output buffers to prevent "headers already sent" errors
         while (ob_get_level()) {
@@ -467,16 +636,18 @@ class Clubworx_Integration {
         fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
         
         // CSV headers
-        $headers = array('ID', 'Type', 'Date', 'First Name', 'Last Name', 'Email', 'Phone', 'Source', 'Medium', 'Class Details', 'Contact Key', 'Event ID');
+        $headers = array('ID', 'Type', 'Account', 'Date', 'First Name', 'Last Name', 'Email', 'Phone', 'Source', 'Medium', 'Class Details', 'Contact Key', 'Event ID');
         fputcsv($output, $headers);
         
         // Add booking data
         foreach ($bookings as $booking) {
             $request_data = json_decode($booking['request_data'], true);
+            $account = isset($booking['account']) ? $booking['account'] : 'primary';
             
             $row = array(
                 $booking['id'],
                 $booking['type'],
+                $account,
                 $booking['created_at'],
                 isset($request_data['first_name']) ? $request_data['first_name'] : '',
                 isset($request_data['last_name']) ? $request_data['last_name'] : '',
@@ -497,172 +668,131 @@ class Clubworx_Integration {
     }
     
     /**
-     * Output dynamic CSS for form customization
+     * Scoped CSS for one location's form settings (uses data-account).
+     *
+     * @param string               $slug Location slug.
+     * @param array<string,mixed> $loc  Normalized location.
+     * @return string
      */
-    public function output_form_custom_css() {
-        // Only output on pages with the booking form
-        global $post;
-        if (!is_a($post, 'WP_Post') || !has_shortcode($post->post_content, 'clubworx_trial_booking')) {
-            return;
-        }
-        
-        $settings = get_option('clubworx_integration_settings', array());
-        $theme_integration = isset($settings['form_theme_integration']) && $settings['form_theme_integration'];
-        
-        // Get theme colors if theme integration is enabled
+    private function build_single_location_form_css($slug, $loc) {
+        $f = isset($loc['form']) && is_array($loc['form']) ? $loc['form'] : array();
+        $theme_integration = !empty($f['theme_integration']);
         $theme_colors = array();
         if ($theme_integration) {
             $theme_colors = $this->get_theme_colors();
         }
-        
-        // Build CSS variables
+
+        $pick = function ($key, $fallback) use ($f) {
+            return !empty($f[$key]) ? $f[$key] : $fallback;
+        };
+
         $css_vars = array();
-        
-        // Primary button colors
-        $css_vars['--clubworx-primary-button-bg'] = !empty($settings['form_primary_button_bg']) 
-            ? $settings['form_primary_button_bg'] 
-            : ($theme_integration && isset($theme_colors['primary']) ? $theme_colors['primary'] : '#32373c');
-        
-        $css_vars['--clubworx-primary-button-hover'] = !empty($settings['form_primary_button_hover']) 
-            ? $settings['form_primary_button_hover'] 
-            : ($theme_integration && isset($theme_colors['primary_hover']) ? $theme_colors['primary_hover'] : '#1e2328');
-        
-        $css_vars['--clubworx-primary-button-text'] = !empty($settings['form_primary_button_text']) 
-            ? $settings['form_primary_button_text'] 
-            : ($theme_integration && isset($theme_colors['button_text']) ? $theme_colors['button_text'] : '#ffffff');
-        
-        // Secondary button colors
-        $css_vars['--clubworx-secondary-button-bg'] = !empty($settings['form_secondary_button_bg']) 
-            ? $settings['form_secondary_button_bg'] 
-            : ($theme_integration && isset($theme_colors['secondary']) ? $theme_colors['secondary'] : '#f8f9fa');
-        
-        $css_vars['--clubworx-secondary-button-hover'] = !empty($settings['form_secondary_button_hover']) 
-            ? $settings['form_secondary_button_hover'] 
-            : ($theme_integration && isset($theme_colors['secondary_hover']) ? $theme_colors['secondary_hover'] : '#abb8c3');
-        
-        // Field colors
-        $css_vars['--clubworx-field-border-color'] = !empty($settings['form_field_border_color']) 
-            ? $settings['form_field_border_color'] 
-            : ($theme_integration && isset($theme_colors['border']) ? $theme_colors['border'] : '#abb8c3');
-        
-        $css_vars['--clubworx-field-focus-color'] = !empty($settings['form_field_focus_color']) 
-            ? $settings['form_field_focus_color'] 
-            : ($theme_integration && isset($theme_colors['accent']) ? $theme_colors['accent'] : '#0693e3');
-        
-        $css_vars['--clubworx-field-error-color'] = !empty($settings['form_field_error_color']) 
-            ? $settings['form_field_error_color'] 
-            : '#cf2e2e';
-        
-        $css_vars['--clubworx-field-bg-color'] = !empty($settings['form_field_bg_color']) 
-            ? $settings['form_field_bg_color'] 
-            : ($theme_integration && isset($theme_colors['background']) ? $theme_colors['background'] : '#ffffff');
-        
-        $css_vars['--clubworx-field-text-color'] = !empty($settings['form_field_text_color']) 
-            ? $settings['form_field_text_color'] 
-            : ($theme_integration && isset($theme_colors['text']) ? $theme_colors['text'] : '#000000');
-        
-        // Section colors
-        $css_vars['--clubworx-section-bg-color'] = !empty($settings['form_section_bg_color']) 
-            ? $settings['form_section_bg_color'] 
-            : ($theme_integration && isset($theme_colors['section_bg']) ? $theme_colors['section_bg'] : '#f8f9fa');
-        
-        $css_vars['--clubworx-section-heading-color'] = !empty($settings['form_section_heading_color']) 
-            ? $settings['form_section_heading_color'] 
-            : ($theme_integration && isset($theme_colors['heading']) ? $theme_colors['heading'] : '#000000');
-        
-        $css_vars['--clubworx-label-text-color'] = !empty($settings['form_label_text_color']) 
-            ? $settings['form_label_text_color'] 
-            : ($theme_integration && isset($theme_colors['text']) ? $theme_colors['text'] : '#000000');
-        
-        // Border radius
-        $css_vars['--clubworx-border-radius'] = !empty($settings['form_border_radius']) 
-            ? $settings['form_border_radius'] 
-            : '8px';
-        
-        // Build CSS
-        $css = '<style id="clubworx-booking-custom-css">' . "\n";
-        $css .= '.clubworx-booking-wrapper {' . "\n";
-        
+        $css_vars['--clubworx-primary-button-bg'] = $pick('primary_button_bg', ($theme_integration && isset($theme_colors['primary']) ? $theme_colors['primary'] : '#32373c'));
+        $css_vars['--clubworx-primary-button-hover'] = $pick('primary_button_hover', ($theme_integration && isset($theme_colors['primary_hover']) ? $theme_colors['primary_hover'] : '#1e2328'));
+        $css_vars['--clubworx-primary-button-text'] = $pick('primary_button_text', ($theme_integration && isset($theme_colors['button_text']) ? $theme_colors['button_text'] : '#ffffff'));
+        $css_vars['--clubworx-secondary-button-bg'] = $pick('secondary_button_bg', ($theme_integration && isset($theme_colors['secondary']) ? $theme_colors['secondary'] : '#f8f9fa'));
+        $css_vars['--clubworx-secondary-button-hover'] = $pick('secondary_button_hover', ($theme_integration && isset($theme_colors['secondary_hover']) ? $theme_colors['secondary_hover'] : '#abb8c3'));
+        $css_vars['--clubworx-field-border-color'] = $pick('field_border_color', ($theme_integration && isset($theme_colors['border']) ? $theme_colors['border'] : '#abb8c3'));
+        $css_vars['--clubworx-field-focus-color'] = $pick('field_focus_color', ($theme_integration && isset($theme_colors['accent']) ? $theme_colors['accent'] : '#0693e3'));
+        $css_vars['--clubworx-field-error-color'] = $pick('field_error_color', '#cf2e2e');
+        $css_vars['--clubworx-field-bg-color'] = $pick('field_bg_color', ($theme_integration && isset($theme_colors['background']) ? $theme_colors['background'] : '#ffffff'));
+        $css_vars['--clubworx-field-text-color'] = $pick('field_text_color', ($theme_integration && isset($theme_colors['text']) ? $theme_colors['text'] : '#000000'));
+        $css_vars['--clubworx-section-bg-color'] = $pick('section_bg_color', ($theme_integration && isset($theme_colors['section_bg']) ? $theme_colors['section_bg'] : '#f8f9fa'));
+        $css_vars['--clubworx-section-heading-color'] = $pick('section_heading_color', ($theme_integration && isset($theme_colors['heading']) ? $theme_colors['heading'] : '#000000'));
+        $css_vars['--clubworx-label-text-color'] = $pick('label_text_color', ($theme_integration && isset($theme_colors['text']) ? $theme_colors['text'] : '#000000'));
+        $css_vars['--clubworx-border-radius'] = $pick('border_radius', '8px');
+
+        $sel = '.clubworx-booking-wrapper[data-account="' . esc_attr($slug) . '"]';
+
+        $css = $sel . ' {' . "\n";
         foreach ($css_vars as $var => $value) {
             $css .= '    ' . $var . ': ' . esc_html($value) . ';' . "\n";
         }
-        
-        // Add theme integration classes
         if ($theme_integration) {
             $css .= '    --clubworx-theme-integration: 1;' . "\n";
         }
-        
         $css .= '}' . "\n";
-        
-        // Apply CSS variables to form elements
-        $css .= '.clubworx-booking-wrapper .submit-btn {' . "\n";
+
+        $css .= $sel . ' .submit-btn {' . "\n";
         $css .= '    background: var(--clubworx-primary-button-bg) !important;' . "\n";
         $css .= '    color: var(--clubworx-primary-button-text) !important;' . "\n";
         $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .submit-btn:hover {' . "\n";
+
+        $css .= $sel . ' .submit-btn:hover {' . "\n";
         $css .= '    background: var(--clubworx-primary-button-hover) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .btn-secondary {' . "\n";
+
+        $css .= $sel . ' .btn-secondary {' . "\n";
         $css .= '    background: var(--clubworx-secondary-button-bg) !important;' . "\n";
         $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .btn-secondary:hover {' . "\n";
+
+        $css .= $sel . ' .btn-secondary:hover {' . "\n";
         $css .= '    background: var(--clubworx-secondary-button-hover) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .form-group input,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group select,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group textarea {' . "\n";
+
+        $css .= $sel . ' .form-group input,' . "\n" . $sel . ' .form-group select,' . "\n" . $sel . ' .form-group textarea {' . "\n";
         $css .= '    border-color: var(--clubworx-field-border-color) !important;' . "\n";
         $css .= '    background-color: var(--clubworx-field-bg-color) !important;' . "\n";
         $css .= '    color: var(--clubworx-field-text-color) !important;' . "\n";
         $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
         $css .= '}' . "\n";
-        
+
         $focus_color = $css_vars['--clubworx-field-focus-color'];
-        $css .= '.clubworx-booking-wrapper .form-group input:focus,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group select:focus,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group textarea:focus {' . "\n";
+        $css .= $sel . ' .form-group input:focus,' . "\n" . $sel . ' .form-group select:focus,' . "\n" . $sel . ' .form-group textarea:focus {' . "\n";
         $css .= '    border-color: var(--clubworx-field-focus-color) !important;' . "\n";
         $css .= '    box-shadow: 0 0 0 3px rgba(' . $this->hex_to_rgb($focus_color) . ', 0.1) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .form-group input.error,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group select.error,' . "\n";
-        $css .= '.clubworx-booking-wrapper .form-group textarea.error {' . "\n";
+
+        $css .= $sel . ' .form-group input.error,' . "\n" . $sel . ' .form-group select.error,' . "\n" . $sel . ' .form-group textarea.error {' . "\n";
         $css .= '    border-color: var(--clubworx-field-error-color) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .form-section {' . "\n";
+
+        $css .= $sel . ' .form-section {' . "\n";
         $css .= '    background-color: var(--clubworx-section-bg-color) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .form-section h3 {' . "\n";
+
+        $css .= $sel . ' .form-section h3 {' . "\n";
         $css .= '    color: var(--clubworx-section-heading-color) !important;' . "\n";
         $css .= '    border-bottom-color: var(--clubworx-field-focus-color) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        $css .= '.clubworx-booking-wrapper .form-group label {' . "\n";
+
+        $css .= $sel . ' .form-group label {' . "\n";
         $css .= '    color: var(--clubworx-label-text-color) !important;' . "\n";
         $css .= '}' . "\n";
-        
-        // Theme integration styles
+
         if ($theme_integration) {
-            $css .= $this->get_theme_integration_css();
+            $ti = $this->get_theme_integration_css();
+            $ti = str_replace('.clubworx-booking-wrapper', $sel, $ti);
+            $css .= $ti;
         }
-        
-        // Custom CSS
-        if (!empty($settings['form_custom_css'])) {
-            $css .= "\n" . '/* Custom CSS */' . "\n";
-            $css .= wp_strip_all_tags($settings['form_custom_css']) . "\n";
+
+        if (!empty($f['custom_css'])) {
+            $css .= "\n" . '/* Custom CSS (' . esc_html($slug) . ') */' . "\n";
+            $scoped = wp_strip_all_tags($f['custom_css']);
+            $scoped = str_replace('.clubworx-booking-wrapper', $sel, $scoped);
+            $css .= $scoped . "\n";
         }
-        
+
+        return $css;
+    }
+
+    /**
+     * Output dynamic CSS for form customization
+     */
+    public function output_form_custom_css() {
+        global $post;
+        if (!is_a($post, 'WP_Post') || !has_shortcode($post->post_content, 'clubworx_trial_booking')) {
+            return;
+        }
+
+        $css = '<style id="clubworx-booking-custom-css">' . "\n";
+        foreach (Clubworx_Locations::all() as $slug => $loc) {
+            $css .= $this->build_single_location_form_css($slug, $loc);
+        }
         $css .= '</style>' . "\n";
-        
+
         echo $css;
     }
     
