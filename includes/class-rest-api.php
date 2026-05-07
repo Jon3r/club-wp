@@ -147,6 +147,19 @@ class Clubworx_REST_API {
                 ),
             ),
         ));
+        // Backwards-compatible alias used in some docs/manual testing.
+        register_rest_route($this->namespace, '/timetable', array(
+            'methods' => 'GET',
+            'callback' => array($this, 'get_schedule'),
+            'permission_callback' => '__return_true',
+            'args' => array(
+                'account' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+            ),
+        ));
         
         // Prospects endpoint (create contact in ClubWorx)
         register_rest_route($this->namespace, '/prospects', array(

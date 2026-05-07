@@ -347,6 +347,32 @@ $rest_schedule_default_url = add_query_arg(
                 <strong><?php _e('Desktop Layout - All Days Side by Side:', 'clubworx-integration'); ?></strong>
                 <code>[clubworx_timetable title="Weekly Schedule" layout="desktop"]</code>
             </div>
+            <div class="shortcode-example">
+                <strong><?php _e('Specific Location (secondary timetable):', 'clubworx-integration'); ?></strong>
+                <code>[clubworx_timetable account="your-location-slug"]</code>
+            </div>
+        </div>
+
+        <div class="clubworx-debug-links">
+            <h3><?php _e('Timetable Debug Helper', 'clubworx-integration'); ?></h3>
+            <p><?php _e('Use these links to test each location endpoint and copy the exact slug into your shortcode account attribute.', 'clubworx-integration'); ?></p>
+            <ul>
+                <?php if (!empty($all_locs)) : ?>
+                    <?php foreach ($all_locs as $slug => $loc_row) : ?>
+                        <?php
+                        $loc_label = isset($loc_row['label']) && $loc_row['label'] !== '' ? $loc_row['label'] : $slug;
+                        $debug_url = add_query_arg('account', $slug, rest_url('clubworx/v1/timetable'));
+                        ?>
+                        <li>
+                            <strong><?php echo esc_html($loc_label); ?></strong>
+                            <code><?php echo esc_html($slug); ?></code>
+                            <a href="<?php echo esc_url($debug_url); ?>" target="_blank" rel="noopener noreferrer"><?php _e('Open endpoint', 'clubworx-integration'); ?></a>
+                        </li>
+                    <?php endforeach; ?>
+                <?php else : ?>
+                    <li><?php _e('No locations configured yet.', 'clubworx-integration'); ?></li>
+                <?php endif; ?>
+            </ul>
         </div>
         
         <div class="shortcode-preview-controls">
@@ -773,6 +799,26 @@ $rest_schedule_default_url = add_query_arg(
     padding: 4px 8px;
     border-radius: 3px;
     font-family: Consolas, Monaco, monospace;
+}
+
+.clubworx-debug-links {
+    margin: 16px 0;
+    padding: 14px 16px;
+    background: #f0f6fc;
+    border: 1px solid #cfe3f5;
+    border-radius: 4px;
+}
+
+.clubworx-debug-links ul {
+    margin: 8px 0 0 18px;
+}
+
+.clubworx-debug-links li {
+    margin: 6px 0;
+}
+
+.clubworx-debug-links a {
+    margin-left: 8px;
 }
 
 /* Pricing Shortcode Preview Styles */
