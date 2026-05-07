@@ -132,7 +132,7 @@ class Clubworx_Locations {
         if (isset($opt['timetable_default_duration_minutes'])) {
             $primary['timetable']['default_duration_minutes'] = absint($opt['timetable_default_duration_minutes']);
         }
-        foreach (array('primary_color', 'accent_color', 'text_color', 'surface_color') as $c) {
+        foreach (array('primary_color', 'accent_color', 'text_color', 'surface_color', 'title_color', 'border_color', 'class_card_bg_color', 'class_card_text_color') as $c) {
             $tk = 'timetable_' . $c;
             if (isset($opt[$tk])) {
                 $primary['timetable'][$c] = $opt[$tk];
@@ -223,6 +223,10 @@ class Clubworx_Locations {
                 'accent_color' => '#ffbe00',
                 'text_color' => '#333333',
                 'surface_color' => '#ffffff',
+                'title_color' => '#2c3e50',
+                'border_color' => '#e1e8ed',
+                'class_card_bg_color' => '#f8f9fa',
+                'class_card_text_color' => '#34495e',
             ),
         );
     }

@@ -2756,6 +2756,10 @@ class Clubworx_REST_API {
             'accent' => isset($tt['accent_color']) ? $tt['accent_color'] : '#ffbe00',
             'text' => isset($tt['text_color']) ? $tt['text_color'] : '#333333',
             'surface' => isset($tt['surface_color']) ? $tt['surface_color'] : '#ffffff',
+            'title' => isset($tt['title_color']) ? $tt['title_color'] : '#2c3e50',
+            'border' => isset($tt['border_color']) ? $tt['border_color'] : '#e1e8ed',
+            'class_card_bg' => isset($tt['class_card_bg_color']) ? $tt['class_card_bg_color'] : '#f8f9fa',
+            'class_card_text' => isset($tt['class_card_text_color']) ? $tt['class_card_text_color'] : '#34495e',
         );
         
         $show_filters = ($atts['show_filters'] === 'true' || $atts['show_filters'] === true || $atts['show_filters'] === '1');
@@ -2786,17 +2790,18 @@ class Clubworx_REST_API {
             .clubworx-timetable-day {
                 background: var(--clubworx-tt-surface, #ffffff) !important;
                 color: var(--clubworx-tt-text, #333333) !important;
-                border-color: #e1e8ed !important;
+                border-color: var(--clubworx-tt-border, #e1e8ed) !important;
             }
             .clubworx-timetable-title, .clubworx-timetable-day-title {
-                color: #2c3e50 !important;
+                color: var(--clubworx-tt-title, #2c3e50) !important;
+                border-color: var(--clubworx-tt-border, #e1e8ed) !important;
             }
             .clubworx-timetable-class {
-                background: #f8f9fa !important;
-                color: var(--clubworx-tt-text, #333333) !important;
+                background: var(--clubworx-tt-class-card-bg, #f8f9fa) !important;
+                color: var(--clubworx-tt-class-card-text, #34495e) !important;
             }
             .clubworx-timetable-class-name {
-                color: #34495e !important;
+                color: var(--clubworx-tt-class-card-text, #34495e) !important;
             }
             .clubworx-timetable-time {
                 background: rgba(255, 255, 255, 0.8) !important;
@@ -2864,20 +2869,21 @@ class Clubworx_REST_API {
                     
                     const days = timetable.querySelectorAll('.clubworx-timetable-day');
                     days.forEach(function(day) {
-                        day.style.setProperty('background', '#ffffff', 'important');
-                        day.style.setProperty('color', '#333', 'important');
-                        day.style.setProperty('border-color', '#e1e8ed', 'important');
+                        day.style.setProperty('background', 'var(--clubworx-tt-surface, #ffffff)', 'important');
+                        day.style.setProperty('color', 'var(--clubworx-tt-text, #333333)', 'important');
+                        day.style.setProperty('border-color', 'var(--clubworx-tt-border, #e1e8ed)', 'important');
                     });
                     
                     const classes = timetable.querySelectorAll('.clubworx-timetable-class');
                     classes.forEach(function(cls) {
-                        cls.style.setProperty('background', '#f8f9fa', 'important');
-                        cls.style.setProperty('color', '#333', 'important');
+                        cls.style.setProperty('background', 'var(--clubworx-tt-class-card-bg, #f8f9fa)', 'important');
+                        cls.style.setProperty('color', 'var(--clubworx-tt-class-card-text, #34495e)', 'important');
                     });
                     
                     const titles = timetable.querySelectorAll('.clubworx-timetable-title, .clubworx-timetable-day-title');
                     titles.forEach(function(title) {
-                        title.style.setProperty('color', '#2c3e50', 'important');
+                        title.style.setProperty('color', 'var(--clubworx-tt-title, #2c3e50)', 'important');
+                        title.style.setProperty('border-color', 'var(--clubworx-tt-border, #e1e8ed)', 'important');
                     });
                     
                     const times = timetable.querySelectorAll('.clubworx-timetable-time');
@@ -3092,6 +3098,10 @@ class Clubworx_REST_API {
         $tt_accent = (!empty($tc['accent']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['accent'])) ? $tc['accent'] : '#ffbe00';
         $tt_text = (!empty($tc['text']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['text'])) ? $tc['text'] : '#333333';
         $tt_surface = (!empty($tc['surface']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['surface'])) ? $tc['surface'] : '#ffffff';
+        $tt_title = (!empty($tc['title']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['title'])) ? $tc['title'] : '#2c3e50';
+        $tt_border = (!empty($tc['border']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['border'])) ? $tc['border'] : '#e1e8ed';
+        $tt_class_card_bg = (!empty($tc['class_card_bg']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['class_card_bg'])) ? $tc['class_card_bg'] : '#f8f9fa';
+        $tt_class_card_text = (!empty($tc['class_card_text']) && preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $tc['class_card_text'])) ? $tc['class_card_text'] : '#34495e';
         
         $client_config = array(
             'instanceId' => $opts['instance_id'],
@@ -3106,7 +3116,7 @@ class Clubworx_REST_API {
         );
         
         ?>
-        <div id="<?php echo esc_attr($opts['instance_id']); ?>" class="clubworx-timetable clubworx-timetable-<?php echo esc_attr($atts['layout']); ?>" style="--clubworx-tt-primary: <?php echo esc_attr($tt_primary); ?>; --clubworx-tt-accent: <?php echo esc_attr($tt_accent); ?>; --clubworx-tt-text: <?php echo esc_attr($tt_text); ?>; --clubworx-tt-surface: <?php echo esc_attr($tt_surface); ?>; background: var(--clubworx-tt-surface) !important; color: var(--clubworx-tt-text) !important; color-scheme: light !important;">
+        <div id="<?php echo esc_attr($opts['instance_id']); ?>" class="clubworx-timetable clubworx-timetable-<?php echo esc_attr($atts['layout']); ?>" style="--clubworx-tt-primary: <?php echo esc_attr($tt_primary); ?>; --clubworx-tt-accent: <?php echo esc_attr($tt_accent); ?>; --clubworx-tt-text: <?php echo esc_attr($tt_text); ?>; --clubworx-tt-surface: <?php echo esc_attr($tt_surface); ?>; --clubworx-tt-title: <?php echo esc_attr($tt_title); ?>; --clubworx-tt-border: <?php echo esc_attr($tt_border); ?>; --clubworx-tt-class-card-bg: <?php echo esc_attr($tt_class_card_bg); ?>; --clubworx-tt-class-card-text: <?php echo esc_attr($tt_class_card_text); ?>; background: var(--clubworx-tt-surface) !important; color: var(--clubworx-tt-text) !important; color-scheme: light !important;">
             <script type="application/json" class="clubworx-timetable-config"><?php echo wp_json_encode($client_config); ?></script>
             <div class="clubworx-timetable-header">
                 <?php if ($atts['show_title'] === 'true' && !empty($atts['title'])): ?>

@@ -553,6 +553,38 @@ class Clubworx_Admin_Settings {
             'clubworx-integration-settings',
             'clubworx_timetable_settings'
         );
+        
+        add_settings_field(
+            'timetable_title_color',
+            __('Title color', 'clubworx-integration'),
+            array($this, 'timetable_title_color_callback'),
+            'clubworx-integration-settings',
+            'clubworx_timetable_settings'
+        );
+        
+        add_settings_field(
+            'timetable_border_color',
+            __('Border color', 'clubworx-integration'),
+            array($this, 'timetable_border_color_callback'),
+            'clubworx-integration-settings',
+            'clubworx_timetable_settings'
+        );
+        
+        add_settings_field(
+            'timetable_class_card_bg_color',
+            __('Class card background', 'clubworx-integration'),
+            array($this, 'timetable_class_card_bg_color_callback'),
+            'clubworx-integration-settings',
+            'clubworx_timetable_settings'
+        );
+        
+        add_settings_field(
+            'timetable_class_card_text_color',
+            __('Class card text color', 'clubworx-integration'),
+            array($this, 'timetable_class_card_text_color_callback'),
+            'clubworx-integration-settings',
+            'clubworx_timetable_settings'
+        );
     }
     
     /**
@@ -716,7 +748,7 @@ class Clubworx_Admin_Settings {
                 $dur = absint($t['default_duration_minutes']);
                 $out['timetable']['default_duration_minutes'] = max(15, min(240, $dur > 0 ? $dur : 60));
             }
-            foreach (array('primary_color', 'accent_color', 'text_color', 'surface_color') as $tc) {
+            foreach (array('primary_color', 'accent_color', 'text_color', 'surface_color', 'title_color', 'border_color', 'class_card_bg_color', 'class_card_text_color') as $tc) {
                 if (isset($t[$tc])) {
                     $color = sanitize_text_field($t[$tc]);
                     if ($color === '' || preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $color)) {
@@ -942,6 +974,34 @@ class Clubworx_Admin_Settings {
         $value = isset($loc['timetable']['surface_color']) ? $loc['timetable']['surface_color'] : '#ffffff';
         echo '<input type="text" name="' . esc_attr($this->loc_name(array('timetable', 'surface_color'))) . '" value="' . esc_attr($value) . '" class="clubworx-color-picker" data-default-color="#ffffff" />';
         echo '<p class="description">' . __('Background color for timetable cards and wrappers.', 'clubworx-integration') . '</p>';
+    }
+    
+    public function timetable_title_color_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['timetable']['title_color']) ? $loc['timetable']['title_color'] : '#2c3e50';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('timetable', 'title_color'))) . '" value="' . esc_attr($value) . '" class="clubworx-color-picker" data-default-color="#2c3e50" />';
+        echo '<p class="description">' . __('Color for timetable heading and day titles.', 'clubworx-integration') . '</p>';
+    }
+    
+    public function timetable_border_color_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['timetable']['border_color']) ? $loc['timetable']['border_color'] : '#e1e8ed';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('timetable', 'border_color'))) . '" value="' . esc_attr($value) . '" class="clubworx-color-picker" data-default-color="#e1e8ed" />';
+        echo '<p class="description">' . __('Border color for timetable day cards and title dividers.', 'clubworx-integration') . '</p>';
+    }
+    
+    public function timetable_class_card_bg_color_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['timetable']['class_card_bg_color']) ? $loc['timetable']['class_card_bg_color'] : '#f8f9fa';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('timetable', 'class_card_bg_color'))) . '" value="' . esc_attr($value) . '" class="clubworx-color-picker" data-default-color="#f8f9fa" />';
+        echo '<p class="description">' . __('Base background color for class cards.', 'clubworx-integration') . '</p>';
+    }
+    
+    public function timetable_class_card_text_color_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['timetable']['class_card_text_color']) ? $loc['timetable']['class_card_text_color'] : '#34495e';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('timetable', 'class_card_text_color'))) . '" value="' . esc_attr($value) . '" class="clubworx-color-picker" data-default-color="#34495e" />';
+        echo '<p class="description">' . __('Text color for class names and card content.', 'clubworx-integration') . '</p>';
     }
     
     // Field callbacks
