@@ -50,7 +50,7 @@ if (!isset($clubworx_location_slug)) {
 
                     <!-- Contact Us Section -->
                     <div class="form-section">
-                        <h3><?php _e('Contact Us - Trial Class Booking Follows (optional)', 'clubworx-integration'); ?></h3>
+                        <h3><?php _e('How would you like us to contact you? (optional)', 'clubworx-integration'); ?></h3>
                         
                         <div class="form-group">
                             <label for="programInfo"><?php _e('Which program would you like to know more about?', 'clubworx-integration'); ?> *</label>

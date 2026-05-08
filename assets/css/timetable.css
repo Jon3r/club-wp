@@ -238,13 +238,9 @@ script.clubworx-timetable-config {
 }
 
 .clubworx-timetable-day::before {
-  content: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #3498db, #2ecc71, #f39c12, #e74c3c);
+  content: none !important;
+  display: none !important;
+  background: none !important;
 }
 
 .clubworx-timetable-day:hover {

@@ -1303,7 +1303,7 @@ class TrialClassBookingManager {
             } else if (group === 'teens') {
                 ageGroupLabel.textContent = 'Age Group *';
             } else if (group === 'adults') {
-                ageGroupLabel.textContent = 'General or Foundation Class? *';
+                ageGroupLabel.textContent = 'Select your class *';
             }
             
             // Add options for the selected group
