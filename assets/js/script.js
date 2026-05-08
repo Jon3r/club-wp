@@ -1370,27 +1370,23 @@ class TrialClassBookingManager {
         
         let availableDays = [];
         
-        if (targetGroup === 'kids') {
-            // Under 13 teens use all kids schedules
-            const kidsSchedule = this.schedule.kids;
-            const allKidsDays = new Set();
-            Object.keys(kidsSchedule).forEach(ageGroup => {
-                Object.keys(kidsSchedule[ageGroup]).forEach(day => {
-                    allKidsDays.add(day);
-                });
+        // Build day list from classes that actually match teens age rules.
+        const allDays = new Set();
+        if (this.schedule && this.schedule.kids) {
+            Object.keys(this.schedule.kids).forEach(kidsAgeGroup => {
+                Object.keys(this.schedule.kids[kidsAgeGroup] || {}).forEach(day => allDays.add(day));
             });
-            availableDays = Array.from(allKidsDays);
-        } else if (targetGroup === 'adults') {
-            // Over 13 teens use adults general and foundations schedules
-            const adultsSchedule = this.schedule.adults;
-            const allAdultDays = new Set();
-            Object.keys(adultsSchedule).forEach(ageGroup => {
-                Object.keys(adultsSchedule[ageGroup]).forEach(day => {
-                    allAdultDays.add(day);
-                });
-            });
-            availableDays = Array.from(allAdultDays);
         }
+        if (this.schedule && this.schedule.adults) {
+            Object.keys(this.schedule.adults).forEach(adultAgeGroup => {
+                Object.keys(this.schedule.adults[adultAgeGroup] || {}).forEach(day => allDays.add(day));
+            });
+        }
+        
+        availableDays = Array.from(allDays).filter(day => {
+            const matches = this.getTeensClassesForDay(ageGroup, day);
+            return matches.length > 0;
+        });
         
         // Sort days in proper week order (Monday first)
         const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -1498,25 +1494,7 @@ class TrialClassBookingManager {
             const kidsClasses = this.getKidsClassesForDay(day);
             availableClasses = this.filterKidsClassesByBracket(kidsClasses, ageGroup);
         } else if (group === 'teens') {
-            // Teens routing logic
-            if (ageGroup === 'under13') {
-                // Under 13 teens get all kids classes for the selected day
-                const kidsSchedule = this.schedule.kids;
-                Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
-                    if (kidsSchedule[kidsAgeGroup][day]) {
-                        availableClasses = availableClasses.concat(kidsSchedule[kidsAgeGroup][day]);
-                    }
-                });
-            } else if (ageGroup === 'over13') {
-                // Over 13 teens get adults general and foundations classes for the selected day
-                const adultsSchedule = this.schedule.adults;
-                if (adultsSchedule.general[day]) {
-                    availableClasses = availableClasses.concat(adultsSchedule.general[day]);
-                }
-                if (adultsSchedule.foundations[day]) {
-                    availableClasses = availableClasses.concat(adultsSchedule.foundations[day]);
-                }
-            }
+            availableClasses = this.getTeensClassesForDay(ageGroup, day);
         } else if ((group === 'kids' || group === 'adults') && ageGroup) {
             availableClasses = this.schedule[group][ageGroup][day] || [];
         } else if (group === 'women') {
@@ -1565,29 +1543,67 @@ class TrialClassBookingManager {
             return list;
         }
         
-        const underBracket = /(5\s*[-–]\s*7|mini\s*warriors?|\bunder\s*6\b|\bunder\s*7\b)/i;
-        const overBracket = /(8\s*[-–]\s*12|warriors?\s*\(8\s*[-–]\s*12\)|\b8\s*[-–]\s*12\b)/i;
+        const miniWarriorsBracket = /(mini\s*warriors?|5\s*[-–]\s*7|\(5\s*[-–]\s*7\))/i;
+        const warriors812Bracket = /(warriors?\s*\(8\s*[-–]\s*12\)|\b8\s*[-–]\s*12\b)/i;
         
-        let filtered = list.filter(className => {
+        const filtered = list.filter(className => {
             if (typeof className !== 'string') {
                 return false;
             }
             if (ageGroup === 'under6') {
-                return underBracket.test(className);
+                // Kids younger bracket: show Mini Warriors classes.
+                const isMini = miniWarriorsBracket.test(className);
+                const isOlderOrTeen = /(8\s*[-–]\s*12|13\+|teens?|combatives)/i.test(className);
+                return isMini && !isOlderOrTeen;
             }
             if (ageGroup === 'over6') {
-                return overBracket.test(className);
+                // Kids older bracket: show Warriors (8-12) classes.
+                const isWarriors812 = warriors812Bracket.test(className);
+                const isMini = /mini\s*warriors?/i.test(className);
+                return isWarriors812 && !isMini;
             }
             return true;
         });
+
+        return filtered;
+    }
+    
+    // Collect classes for teens based on strict age-group rules.
+    getTeensClassesForDay(ageGroup, day) {
+        const kidsClasses = this.getKidsClassesForDay(day);
+        const adultsClasses = [];
+        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
+        Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
+            if (adultsSchedule[adultsAgeGroup] && adultsSchedule[adultsAgeGroup][day]) {
+                adultsClasses.push(...adultsSchedule[adultsAgeGroup][day]);
+            }
+        });
         
-        // If strict filtering finds nothing, fall back to full list to avoid dead-ends
-        // on locations that don't include age tags in class names.
-        if (filtered.length === 0) {
-            filtered = list;
+        const allClasses = [...new Set([...(kidsClasses || []), ...adultsClasses])];
+        
+        if (ageGroup === 'under13') {
+            // Under 13: show Warriors classes only (exclude teen/13+ classes).
+            return allClasses.filter(className => {
+                if (typeof className !== 'string') {
+                    return false;
+                }
+                const isWarriors = /warriors?/i.test(className);
+                const isTeens13 = /(teens?|13\+|combatives)/i.test(className);
+                return isWarriors && !isTeens13;
+            });
         }
         
-        return filtered;
+        if (ageGroup === 'over13') {
+            // Over 13: show only the Teens 13+/Combatives class.
+            return allClasses.filter(className => {
+                if (typeof className !== 'string') {
+                    return false;
+                }
+                return /(teens?.*13\+|13\+|teens?\s*&\s*warriors?\s*combatives|combatives)/i.test(className);
+            });
+        }
+        
+        return allClasses;
     }
     
     // Utility methods for dropdown management
