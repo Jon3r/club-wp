@@ -18,8 +18,8 @@ class TrialClassBookingManager {
         // Age group options for different groups
         this.ageGroupOptions = {
             kids: [
-                { value: 'under6', text: 'Under 6 years' },
-                { value: 'over6', text: '6+ years' }
+                { value: 'under6', text: '5-7 years' },
+                { value: 'over6', text: '8-12 years' }
             ],
             teens: [
                 { value: 'under13', text: 'Under 13 years' },
@@ -1428,7 +1428,21 @@ class TrialClassBookingManager {
         
         let availableDays = [];
         
-        if ((group === 'kids' || group === 'adults') && ageGroup) {
+        if (group === 'kids' && ageGroup) {
+            // Kids are filtered by class-name age bracket labels (e.g. 5-7 / 8-12),
+            // so derive valid days from matching classes rather than raw schedule buckets.
+            const kidsSchedule = this.schedule.kids || {};
+            const allKidsDays = new Set();
+            Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
+                Object.keys(kidsSchedule[kidsAgeGroup] || {}).forEach(dayKey => {
+                    allKidsDays.add(dayKey);
+                });
+            });
+            availableDays = Array.from(allKidsDays).filter(dayKey => {
+                const classes = this.getKidsClassesForDay(dayKey);
+                return this.filterKidsClassesByBracket(classes, ageGroup).length > 0;
+            });
+        } else if (group === 'adults' && ageGroup) {
             const schedule = this.schedule[group][ageGroup];
             if (schedule) {
                 availableDays = Object.keys(schedule);
@@ -1480,7 +1494,10 @@ class TrialClassBookingManager {
         
         let availableClasses = [];
         
-        if (group === 'teens') {
+        if (group === 'kids') {
+            const kidsClasses = this.getKidsClassesForDay(day);
+            availableClasses = this.filterKidsClassesByBracket(kidsClasses, ageGroup);
+        } else if (group === 'teens') {
             // Teens routing logic
             if (ageGroup === 'under13') {
                 // Under 13 teens get all kids classes for the selected day
@@ -1527,6 +1544,50 @@ class TrialClassBookingManager {
             console.warn('⚠️ No available classes found for:', group, ageGroup, day);
             this.updateFormStatus(`No classes available for ${group} ${ageGroup || ''} on ${day}`, 'error');
         }
+    }
+    
+    // Gather all kids classes for a specific day across kids schedule buckets.
+    getKidsClassesForDay(day) {
+        const kidsSchedule = this.schedule && this.schedule.kids ? this.schedule.kids : {};
+        let classes = [];
+        Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
+            if (kidsSchedule[kidsAgeGroup] && kidsSchedule[kidsAgeGroup][day]) {
+                classes = classes.concat(kidsSchedule[kidsAgeGroup][day]);
+            }
+        });
+        return [...new Set(classes)];
+    }
+    
+    // Filter kids classes by visible age bracket in class name.
+    filterKidsClassesByBracket(classes, ageGroup) {
+        const list = Array.isArray(classes) ? classes : [];
+        if (!ageGroup) {
+            return list;
+        }
+        
+        const underBracket = /(5\s*[-–]\s*7|mini\s*warriors?|\bunder\s*6\b|\bunder\s*7\b)/i;
+        const overBracket = /(8\s*[-–]\s*12|warriors?\s*\(8\s*[-–]\s*12\)|\b8\s*[-–]\s*12\b)/i;
+        
+        let filtered = list.filter(className => {
+            if (typeof className !== 'string') {
+                return false;
+            }
+            if (ageGroup === 'under6') {
+                return underBracket.test(className);
+            }
+            if (ageGroup === 'over6') {
+                return overBracket.test(className);
+            }
+            return true;
+        });
+        
+        // If strict filtering finds nothing, fall back to full list to avoid dead-ends
+        // on locations that don't include age tags in class names.
+        if (filtered.length === 0) {
+            filtered = list;
+        }
+        
+        return filtered;
     }
     
     // Utility methods for dropdown management

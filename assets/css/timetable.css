@@ -124,21 +124,21 @@ script.clubworx-timetable-config {
 
 /* Grid Layout (Default) */
 .clubworx-timetable-grid .clubworx-timetable-content {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 2rem;
 }
 
 /* Desktop-specific grid adjustments */
 @media (min-width: 1200px) {
   .clubworx-timetable-grid .clubworx-timetable-content {
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 2rem;
   }
 }
 
 @media (min-width: 1600px) {
   .clubworx-timetable-grid .clubworx-timetable-content {
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 2rem;
   }
 }
@@ -163,8 +163,13 @@ script.clubworx-timetable-config {
 }
 
 /* Desktop Layout - Optimized for larger screens */
+.clubworx-timetable-desktop {
+  overflow-x: auto;
+}
+
 .clubworx-timetable-desktop .clubworx-timetable-content {
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(220px, 1fr));
+  min-width: 1600px;
   gap: 1rem;
   max-width: none;
 }
