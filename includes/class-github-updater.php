@@ -15,6 +15,7 @@ class Clubworx_GitHub_Updater {
     // GitHub repository info - Uses constants from main plugin file
     private $github_username;
     private $github_repo;
+    private $github_token;
     private $github_api_url = 'https://api.github.com/repos';
     
     public static function get_instance() {
@@ -28,6 +29,7 @@ class Clubworx_GitHub_Updater {
         // Get GitHub info from constants (defined in main plugin file)
         $this->github_username = defined('CLUBWORX_INTEGRATION_GITHUB_USERNAME') ? CLUBWORX_INTEGRATION_GITHUB_USERNAME : '';
         $this->github_repo = defined('CLUBWORX_INTEGRATION_GITHUB_REPO') ? CLUBWORX_INTEGRATION_GITHUB_REPO : '';
+        $this->github_token = defined('CLUBWORX_INTEGRATION_GITHUB_TOKEN') ? CLUBWORX_INTEGRATION_GITHUB_TOKEN : '';
         
         // Allow override from settings (optional)
         $settings = get_option('clubworx_integration_settings', array());
@@ -40,13 +42,70 @@ class Clubworx_GitHub_Updater {
         if ($gh_repo !== '') {
             $this->github_repo = $gh_repo;
         }
+        if (!empty($gh['token'])) {
+            $this->github_token = $gh['token'];
+        } elseif (!empty($settings['github_token'])) {
+            // Backward compatibility with legacy flat settings key.
+            $this->github_token = $settings['github_token'];
+        }
         
         // Only hook into update system if GitHub is configured
         if (!empty($this->github_username) && !empty($this->github_repo)) {
             add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'));
             add_filter('plugins_api', array($this, 'plugin_info'), 10, 3);
             add_filter('upgrader_source_selection', array($this, 'upgrader_source_selection'), 10, 4);
+            // Ensure authenticated API + package downloads for private repos.
+            add_filter('http_request_args', array($this, 'add_github_auth_headers'), 10, 2);
         }
+    }
+    
+    /**
+     * Build common GitHub request headers.
+     *
+     * @return array<string,string>
+     */
+    private function get_github_headers() {
+        $headers = array(
+            'Accept' => 'application/vnd.github.v3+json',
+            'User-Agent' => 'WordPress-Clubworx-Integration',
+        );
+        if (!empty($this->github_token)) {
+            // GitHub still supports token auth for REST and codeload requests.
+            $headers['Authorization'] = 'token ' . $this->github_token;
+        }
+        return $headers;
+    }
+    
+    /**
+     * Add auth headers to GitHub API/package requests.
+     *
+     * @param array<string,mixed> $args
+     * @param string $url
+     * @return array<string,mixed>
+     */
+    public function add_github_auth_headers($args, $url) {
+        if (empty($this->github_token) || !is_string($url) || $url === '') {
+            return $args;
+        }
+        
+        $repo_path = '/' . $this->github_username . '/' . $this->github_repo;
+        $is_repo_api = strpos($url, 'api.github.com/repos' . $repo_path) !== false;
+        $is_repo_codeload = strpos($url, 'codeload.github.com' . $repo_path) !== false;
+        $is_repo_zipball = strpos($url, 'github.com' . $repo_path . '/zipball') !== false;
+        
+        if (!$is_repo_api && !$is_repo_codeload && !$is_repo_zipball) {
+            return $args;
+        }
+        
+        if (!isset($args['headers']) || !is_array($args['headers'])) {
+            $args['headers'] = array();
+        }
+        
+        foreach ($this->get_github_headers() as $key => $value) {
+            $args['headers'][$key] = $value;
+        }
+        
+        return $args;
     }
     
     /**
@@ -160,10 +219,7 @@ class Clubworx_GitHub_Updater {
         
         $response = wp_remote_get($api_url, array(
             'timeout' => 10,
-            'headers' => array(
-                'Accept' => 'application/vnd.github.v3+json',
-                'User-Agent' => 'WordPress-Clubworx-Integration'
-            )
+            'headers' => $this->get_github_headers(),
         ));
         
         if (is_wp_error($response)) {
@@ -194,10 +250,7 @@ class Clubworx_GitHub_Updater {
                 
                 $all_response = wp_remote_get($all_releases_url, array(
                     'timeout' => 10,
-                    'headers' => array(
-                        'Accept' => 'application/vnd.github.v3+json',
-                        'User-Agent' => 'WordPress-Clubworx-Integration'
-                    )
+                    'headers' => $this->get_github_headers(),
                 ));
                 
                 if (!is_wp_error($all_response) && wp_remote_retrieve_response_code($all_response) === 200) {

@@ -2792,6 +2792,12 @@ class Clubworx_REST_API {
                 color: var(--clubworx-tt-text, #333333) !important;
                 border-color: var(--clubworx-tt-border, #e1e8ed) !important;
             }
+            .clubworx-timetable-day::before {
+                content: none !important;
+                display: none !important;
+                background: none !important;
+                height: 0 !important;
+            }
             .clubworx-timetable-title, .clubworx-timetable-day-title {
                 color: var(--clubworx-tt-title, #2c3e50) !important;
                 border-color: var(--clubworx-tt-border, #e1e8ed) !important;
