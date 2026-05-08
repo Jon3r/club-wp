@@ -54,6 +54,7 @@ class Clubworx_GitHub_Updater {
             add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'));
             add_filter('plugins_api', array($this, 'plugin_info'), 10, 3);
             add_filter('upgrader_source_selection', array($this, 'upgrader_source_selection'), 10, 4);
+            add_filter('upgrader_post_install', array($this, 'upgrader_post_install'), 10, 3);
             // Ensure authenticated API + package downloads for private repos.
             add_filter('http_request_args', array($this, 'add_github_auth_headers'), 10, 2);
         }
@@ -140,6 +141,61 @@ class Clubworx_GitHub_Updater {
         }
         
         return $source;
+    }
+    
+    /**
+     * Ensure installed package ends up in the active plugin directory.
+     *
+     * Some hosts/flows may report success but keep files in a temp repo-named
+     * directory; this guarantees overwrite of the actual plugin folder.
+     *
+     * @param bool|WP_Error $response
+     * @param array<string,mixed> $hook_extra
+     * @param array<string,mixed> $result
+     * @return bool|WP_Error|array<string,mixed>
+     */
+    public function upgrader_post_install($response, $hook_extra, $result) {
+        global $wp_filesystem;
+        
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        if (!isset($hook_extra['plugin'])) {
+            return $response;
+        }
+        
+        $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE);
+        if ($hook_extra['plugin'] !== $plugin_slug) {
+            return $response;
+        }
+        
+        if (empty($result['destination']) || !is_string($result['destination'])) {
+            return $response;
+        }
+        
+        $target_dir = trailingslashit(WP_PLUGIN_DIR) . dirname($plugin_slug);
+        $current_destination = untrailingslashit($result['destination']);
+        $target_destination = untrailingslashit($target_dir);
+        
+        if ($current_destination === $target_destination) {
+            return $result;
+        }
+        
+        // Remove stale target dir first so move succeeds reliably.
+        if ($wp_filesystem->is_dir($target_destination)) {
+            $wp_filesystem->delete($target_destination, true);
+        }
+        
+        if ($wp_filesystem->move($current_destination, $target_destination, true)) {
+            $result['destination'] = $target_destination;
+            $result['destination_name'] = basename($target_destination);
+            return $result;
+        }
+        
+        return new WP_Error(
+            'clubworx_update_move_failed',
+            __('Plugin update extracted, but final plugin directory move failed.', 'clubworx-integration')
+        );
     }
     
     /**
