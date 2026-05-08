@@ -26,8 +26,7 @@ class TrialClassBookingManager {
                 { value: 'over13', text: 'Over 13 years' }
             ],
             adults: [
-                { value: 'general', text: 'General' },
-                { value: 'foundations', text: 'Foundations' }
+                { value: 'general', text: 'General' }
             ]
         };
         
@@ -1546,15 +1545,15 @@ class TrialClassBookingManager {
         const miniWarriorsBracket = /(mini\s*warriors?|5\s*[-–]\s*7|\(5\s*[-–]\s*7\))/i;
         const warriors812Bracket = /(warriors?\s*\(8\s*[-–]\s*12\)|\b8\s*[-–]\s*12\b)/i;
         
-        const filtered = list.filter(className => {
+        let filtered = list.filter(className => {
             if (typeof className !== 'string') {
                 return false;
             }
             if (ageGroup === 'under6') {
-                // Kids younger bracket: show Mini Warriors classes.
-                const isMini = miniWarriorsBracket.test(className);
+                // Kids younger bracket: prefer Mini/Tiny Warriors classes.
+                const isMiniOrTiny = /(mini\s*warriors?|tiny\s*warriors?|5\s*[-–]\s*7|3\s*[-–]\s*4|\(5\s*[-–]\s*7\)|\(3\s*[-–]\s*4\))/i.test(className);
                 const isOlderOrTeen = /(8\s*[-–]\s*12|13\+|teens?|combatives)/i.test(className);
-                return isMini && !isOlderOrTeen;
+                return isMiniOrTiny && !isOlderOrTeen;
             }
             if (ageGroup === 'over6') {
                 // Kids older bracket: show Warriors (8-12) classes.
@@ -1564,6 +1563,17 @@ class TrialClassBookingManager {
             }
             return true;
         });
+        
+        // Safety fallback: if naming doesn't include bracket markers, keep kids flow usable.
+        if (filtered.length === 0) {
+            filtered = list.filter(className => {
+                if (typeof className !== 'string') {
+                    return false;
+                }
+                const isTeen = /(13\+|teens?|combatives)/i.test(className);
+                return !isTeen;
+            });
+        }
 
         return filtered;
     }
