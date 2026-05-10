@@ -1494,8 +1494,9 @@ class TrialClassBookingManager {
             availableClasses = this.filterKidsClassesByBracket(kidsClasses, ageGroup);
         } else if (group === 'teens') {
             availableClasses = this.getTeensClassesForDay(ageGroup, day);
-        } else if ((group === 'kids' || group === 'adults') && ageGroup) {
-            availableClasses = this.schedule[group][ageGroup][day] || [];
+        } else if (group === 'adults' && ageGroup) {
+            const dayClasses = this.getAllClassesForDay(day);
+            availableClasses = dayClasses.filter(className => this.isAdultClassName(className));
         } else if (group === 'women') {
             availableClasses = this.schedule[group][day] || [];
         }
@@ -1523,16 +1524,54 @@ class TrialClassBookingManager {
         }
     }
     
-    // Gather all kids classes for a specific day across kids schedule buckets.
-    getKidsClassesForDay(day) {
-        const kidsSchedule = this.schedule && this.schedule.kids ? this.schedule.kids : {};
+    // Gather all classes for a given day from every schedule bucket.
+    getAllClassesForDay(day) {
         let classes = [];
+        
+        const kidsSchedule = this.schedule && this.schedule.kids ? this.schedule.kids : {};
         Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
             if (kidsSchedule[kidsAgeGroup] && kidsSchedule[kidsAgeGroup][day]) {
                 classes = classes.concat(kidsSchedule[kidsAgeGroup][day]);
             }
         });
+        
+        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
+        Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
+            if (adultsSchedule[adultsAgeGroup] && adultsSchedule[adultsAgeGroup][day]) {
+                classes = classes.concat(adultsSchedule[adultsAgeGroup][day]);
+            }
+        });
+        
+        const womenSchedule = this.schedule && this.schedule.women ? this.schedule.women : {};
+        if (womenSchedule[day]) {
+            classes = classes.concat(womenSchedule[day]);
+        }
+        
         return [...new Set(classes)];
+    }
+    
+    // Gather kids classes for a day (name-based in case API buckets are mixed).
+    getKidsClassesForDay(day) {
+        const allClasses = this.getAllClassesForDay(day);
+        return allClasses.filter(className => this.isKidsClassName(className));
+    }
+    
+    isKidsClassName(className) {
+        if (typeof className !== 'string') {
+            return false;
+        }
+        const hasKidsMarker = /(mini\s*warriors?|tiny\s*warriors?|warriors?\s*\(8\s*[-–]\s*12\)|5\s*[-–]\s*7|3\s*[-–]\s*4|8\s*[-–]\s*12|\bkids?\b)/i.test(className);
+        const hasNonKidsMarker = /(adults?|core\s*skills|foundations?|teens?|13\+|combatives)/i.test(className);
+        return hasKidsMarker && !hasNonKidsMarker;
+    }
+    
+    isAdultClassName(className) {
+        if (typeof className !== 'string') {
+            return false;
+        }
+        const hasAdultMarker = /(adults?|all\s*levels|core\s*skills|foundations?)/i.test(className);
+        const hasNonAdultMarker = /(mini\s*warriors?|tiny\s*warriors?|warriors?\s*\(8\s*[-–]\s*12\)|5\s*[-–]\s*7|3\s*[-–]\s*4|8\s*[-–]\s*12|teens?|13\+|combatives)/i.test(className);
+        return hasAdultMarker && !hasNonAdultMarker;
     }
     
     // Filter kids classes by visible age bracket in class name.
