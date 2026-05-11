@@ -1424,16 +1424,8 @@ class TrialClassBookingManager {
         let availableDays = [];
         
         if (group === 'kids' && ageGroup) {
-            // Kids are filtered by class-name age bracket labels (e.g. 5-7 / 8-12),
-            // so derive valid days from matching classes rather than raw schedule buckets.
-            const kidsSchedule = this.schedule.kids || {};
-            const allKidsDays = new Set();
-            Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
-                Object.keys(kidsSchedule[kidsAgeGroup] || {}).forEach(dayKey => {
-                    allKidsDays.add(dayKey);
-                });
-            });
-            availableDays = Array.from(allKidsDays).filter(dayKey => {
+            // Days must include adults/women buckets — kid-labelled classes can live there.
+            availableDays = Array.from(this.collectScheduleDayKeys()).filter(dayKey => {
                 const classes = this.getKidsClassesForDay(dayKey);
                 return this.filterKidsClassesByBracket(classes, ageGroup).length > 0;
             });
@@ -1471,8 +1463,33 @@ class TrialClassBookingManager {
             console.log('✅ Days populated successfully:', availableDays);
         } else {
             console.warn('⚠️ No available days found for:', group, ageGroup);
-            this.updateFormStatus(`No classes available for ${group} ${ageGroup || ''}`, 'error');
+            this.updateFormStatus(this.formatNoClassesMessage(group, ageGroup, null), 'error');
         }
+    }
+    
+    /**
+     * Human-readable “no classes” message (avoids raw keys like under6).
+     */
+    formatNoClassesMessage(group, ageGroup, day) {
+        const agePretty = {
+            under6: '5–7 years',
+            over6: '8–12 years',
+            under13: 'Under 13 years',
+            over13: 'Over 13 years',
+            general: 'General'
+        };
+        const ag = agePretty[ageGroup] || ageGroup || '';
+        const dayBit = day ? ` on ${day}` : '';
+        if (group === 'kids') {
+            return `No classes available for Kids (${ag})${dayBit}.`;
+        }
+        if (group === 'teens') {
+            return `No classes available for Teens (${ag})${dayBit}.`;
+        }
+        if (group === 'adults') {
+            return `No classes available for Adults${dayBit}.`;
+        }
+        return `No classes available for ${group} ${ag}${dayBit}.`;
     }
     
     // Populate classes dropdown based on selections
@@ -1520,8 +1537,29 @@ class TrialClassBookingManager {
             console.log('✅ Classes populated successfully:', availableClasses);
         } else {
             console.warn('⚠️ No available classes found for:', group, ageGroup, day);
-            this.updateFormStatus(`No classes available for ${group} ${ageGroup || ''} on ${day}`, 'error');
+            this.updateFormStatus(this.formatNoClassesMessage(group, ageGroup, day), 'error');
         }
+    }
+    
+    /**
+     * All weekday keys that appear anywhere in the schedule (kids, adults, women).
+     * Needed because kid classes may be stored under adults buckets in API data.
+     *
+     * @return Set<string>
+     */
+    collectScheduleDayKeys() {
+        const days = new Set();
+        const kidsSchedule = this.schedule && this.schedule.kids ? this.schedule.kids : {};
+        Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
+            Object.keys(kidsSchedule[kidsAgeGroup] || {}).forEach(d => days.add(d));
+        });
+        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
+        Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
+            Object.keys(adultsSchedule[adultsAgeGroup] || {}).forEach(d => days.add(d));
+        });
+        const womenSchedule = this.schedule && this.schedule.women ? this.schedule.women : {};
+        Object.keys(womenSchedule).forEach(d => days.add(d));
+        return days;
     }
     
     // Gather all classes for a given day from every schedule bucket.
@@ -1631,14 +1669,17 @@ class TrialClassBookingManager {
         const allClasses = [...new Set([...(kidsClasses || []), ...adultsClasses])];
         
         if (ageGroup === 'under13') {
-            // Under 13: show Warriors classes only (exclude teen/13+ classes).
+            // Under 13 teens: Warriors (8–12) only — not Mini/Tiny (5–7 / 3–4).
             return allClasses.filter(className => {
                 if (typeof className !== 'string') {
                     return false;
                 }
-                const isWarriors = /warriors?/i.test(className);
-                const isTeens13 = /(teens?|13\+|combatives)/i.test(className);
-                return isWarriors && !isTeens13;
+                if (/mini\s*warriors?|tiny\s*warriors?|\(5\s*[-–]\s*7\)|\(3\s*[-–]\s*4\)|\b5\s*[-–]\s*7\b|\b3\s*[-–]\s*4\b/i.test(className)) {
+                    return false;
+                }
+                const isWarriors812 = /warriors?\s*\(\s*8\s*[-–]\s*12\s*\)|\b8\s*[-–]\s*12\b/i.test(className);
+                const isTeens13 = /(teens?\s*\(?\s*13\+|13\+|combatives)/i.test(className);
+                return isWarriors812 && !isTeens13;
             });
         }
         
