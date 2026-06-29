@@ -193,11 +193,12 @@ class TrialClassBookingManager {
                 this.updateFormStatus('Schedule loaded successfully', 'ready');
                 console.log('✅ Schedule data loaded successfully');
                 console.log('📋 Available programs:', {
-                    kids_under6_days: Object.keys(this.schedule.kids.under6),
-                    kids_over6_days: Object.keys(this.schedule.kids.over6),
-                    adults_general_days: Object.keys(this.schedule.adults.general),
-                    adults_foundations_days: Object.keys(this.schedule.adults.foundations),
-                    womens_days: Object.keys(this.schedule.women)
+                    kids_under6_days: Object.keys((this.schedule.kids || {}).under6 || {}),
+                    kids_over6_days: Object.keys((this.schedule.kids || {}).over6 || {}),
+                    teens_days: Object.keys(this.schedule.teens || {}),
+                    adults_general_days: Object.keys((this.schedule.adults || {}).general || {}),
+                    adults_foundations_days: Object.keys((this.schedule.adults || {}).foundations || {}),
+                    womens_days: Object.keys(this.schedule.women || {})
                 });
             } else {
                 throw new Error('Invalid schedule data received');
@@ -209,6 +210,7 @@ class TrialClassBookingManager {
             // Fallback to basic schedule structure to prevent total failure
             this.schedule = {
                 kids: { under6: {}, over6: {} },
+                teens: {},
                 adults: { general: {}, foundations: {} },
                 women: {}
             };
@@ -1371,6 +1373,10 @@ class TrialClassBookingManager {
         
         // Build day list from classes that actually match teens age rules.
         const allDays = new Set();
+        // Check dedicated teens bucket first (populated by PHP categorisation fix).
+        if (this.schedule && this.schedule.teens) {
+            Object.keys(this.schedule.teens).forEach(day => allDays.add(day));
+        }
         if (this.schedule && this.schedule.kids) {
             Object.keys(this.schedule.kids).forEach(kidsAgeGroup => {
                 Object.keys(this.schedule.kids[kidsAgeGroup] || {}).forEach(day => allDays.add(day));
@@ -1553,6 +1559,8 @@ class TrialClassBookingManager {
         Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
             Object.keys(kidsSchedule[kidsAgeGroup] || {}).forEach(d => days.add(d));
         });
+        const teensSchedule = this.schedule && this.schedule.teens ? this.schedule.teens : {};
+        Object.keys(teensSchedule).forEach(d => days.add(d));
         const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
         Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
             Object.keys(adultsSchedule[adultsAgeGroup] || {}).forEach(d => days.add(d));
@@ -1565,26 +1573,31 @@ class TrialClassBookingManager {
     // Gather all classes for a given day from every schedule bucket.
     getAllClassesForDay(day) {
         let classes = [];
-        
+
         const kidsSchedule = this.schedule && this.schedule.kids ? this.schedule.kids : {};
         Object.keys(kidsSchedule).forEach(kidsAgeGroup => {
             if (kidsSchedule[kidsAgeGroup] && kidsSchedule[kidsAgeGroup][day]) {
                 classes = classes.concat(kidsSchedule[kidsAgeGroup][day]);
             }
         });
-        
+
+        const teensSchedule = this.schedule && this.schedule.teens ? this.schedule.teens : {};
+        if (teensSchedule[day]) {
+            classes = classes.concat(teensSchedule[day]);
+        }
+
         const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
         Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
             if (adultsSchedule[adultsAgeGroup] && adultsSchedule[adultsAgeGroup][day]) {
                 classes = classes.concat(adultsSchedule[adultsAgeGroup][day]);
             }
         });
-        
+
         const womenSchedule = this.schedule && this.schedule.women ? this.schedule.women : {};
         if (womenSchedule[day]) {
             classes = classes.concat(womenSchedule[day]);
         }
-        
+
         return [...new Set(classes)];
     }
     
