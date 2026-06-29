@@ -113,6 +113,26 @@ class Clubworx_Admin_Settings {
         }
 
         if ($tab === 'locations') {
+            add_settings_section(
+                'clubworx_locations_general',
+                __('Location defaults', 'clubworx-integration'),
+                array($this, 'locations_general_section_callback'),
+                'clubworx-integration-settings'
+            );
+            add_settings_field(
+                'default_location',
+                __('Site-wide default', 'clubworx-integration'),
+                array($this, 'default_location_field_callback'),
+                'clubworx-integration-settings',
+                'clubworx_locations_general'
+            );
+            add_settings_field(
+                'master_form_style_location',
+                __('Master form initial styling', 'clubworx-integration'),
+                array($this, 'master_form_style_location_field_callback'),
+                'clubworx-integration-settings',
+                'clubworx_locations_general'
+            );
             return;
         }
 
@@ -828,6 +848,22 @@ class Clubworx_Admin_Settings {
             );
         }
 
+        $all_locations = Clubworx_Locations::all();
+
+        if (isset($input['default_location'])) {
+            $def_slug = sanitize_key($input['default_location']);
+            if ($def_slug !== '' && isset($all_locations[$def_slug])) {
+                $existing['default_location'] = $def_slug;
+            }
+        }
+
+        if (array_key_exists('master_form_style_location', $input)) {
+            $style_slug = sanitize_key($input['master_form_style_location']);
+            if ($style_slug === '' || isset($all_locations[$style_slug])) {
+                $existing['master_form_style_location'] = $style_slug;
+            }
+        }
+
         if (!isset($existing['default_location']) || $existing['default_location'] === '') {
             $existing['default_location'] = 'primary';
         }
@@ -842,6 +878,41 @@ class Clubworx_Admin_Settings {
 
     public function site_branding_section_callback() {
         echo '<p>' . __('Used in calendar downloads, ICS files, and post-booking redirects.', 'clubworx-integration') . '</p>';
+    }
+
+    public function locations_general_section_callback() {
+        echo '<p>' . __('Choose the site-wide default location and which location’s Form Design settings style the master booking form before a visitor picks a location.', 'clubworx-integration') . '</p>';
+    }
+
+    public function default_location_field_callback() {
+        $default_slug = Clubworx_Locations::get_default_slug();
+        $all_locs = Clubworx_Locations::all();
+        echo '<select name="clubworx_integration_settings[default_location]" id="default_location_slug">';
+        foreach ($all_locs as $slug => $loc_row) {
+            $label = isset($loc_row['label']) ? $loc_row['label'] : $slug;
+            echo '<option value="' . esc_attr($slug) . '"' . selected($default_slug, $slug, false) . '>';
+            echo esc_html($label) . ' (' . esc_html($slug) . ')';
+            echo '</option>';
+        }
+        echo '</select>';
+        echo '<p class="description">' . __('Used when a page does not specify a Clubworx location.', 'clubworx-integration') . '</p>';
+    }
+
+    public function master_form_style_location_field_callback() {
+        $master_form_style_slug = Clubworx_Locations::get_master_form_style_location_setting();
+        $all_locs = Clubworx_Locations::all();
+        echo '<select name="clubworx_integration_settings[master_form_style_location]" id="master_form_style_location">';
+        echo '<option value=""' . selected($master_form_style_slug, '', false) . '>';
+        echo esc_html__('Automatic (first location in master form list)', 'clubworx-integration');
+        echo '</option>';
+        foreach ($all_locs as $slug => $loc_row) {
+            $label = isset($loc_row['label']) ? $loc_row['label'] : $slug;
+            echo '<option value="' . esc_attr($slug) . '"' . selected($master_form_style_slug, $slug, false) . '>';
+            echo esc_html($label) . ' (' . esc_html($slug) . ')';
+            echo '</option>';
+        }
+        echo '</select>';
+        echo '<p class="description">' . __('Form colours and borders come from that location’s Form Design tab.', 'clubworx-integration') . '</p>';
     }
     
     public function clubworx_section_callback() {

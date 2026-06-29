@@ -439,10 +439,10 @@ class Clubworx_Locations {
      */
     public static function get_master_form_style_location_setting() {
         $opt = get_option(self::OPTION_KEY, array());
-        if (!is_array($opt) || empty($opt['master_form_style_location'])) {
+        if (!is_array($opt) || !array_key_exists('master_form_style_location', $opt)) {
             return '';
         }
-        return sanitize_key($opt['master_form_style_location']);
+        return sanitize_key((string) $opt['master_form_style_location']);
     }
 
     /**

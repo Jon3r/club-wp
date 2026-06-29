@@ -22,7 +22,6 @@ if ($tab === '' || ($tab !== 'global' && $tab !== 'locations' && !isset($all_loc
 }
 
 $default_slug = Clubworx_Locations::get_default_slug();
-$master_form_style_slug = Clubworx_Locations::get_master_form_style_location_setting();
 $settings_base = admin_url('admin.php?page=clubworx-integration-settings');
 
 // Flash messages (Locations tab actions).
@@ -34,9 +33,6 @@ if (isset($_GET['deleted'])) {
 }
 if (isset($_GET['defaulted'])) {
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Default location updated.', 'clubworx-integration') . '</p></div>';
-}
-if (isset($_GET['master_style_saved'])) {
-    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Master form styling location updated.', 'clubworx-integration') . '</p></div>';
 }
 if (isset($_GET['error'])) {
     $err = sanitize_key(wp_unslash($_GET['error']));
@@ -86,44 +82,13 @@ if (isset($_GET['error'])) {
     </h2>
 
     <?php if ($tab === 'locations') : ?>
-        <p><?php esc_html_e('Add or remove locations and choose which one is the default when a page does not specify a Clubworx location.', 'clubworx-integration'); ?></p>
-
-        <h3><?php esc_html_e('Default location', 'clubworx-integration'); ?></h3>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php wp_nonce_field('clubworx_set_default_location'); ?>
-            <input type="hidden" name="action" value="clubworx_set_default_location" />
-            <p>
-                <label for="default_location_slug"><?php esc_html_e('Site-wide default', 'clubworx-integration'); ?></label><br />
-                <select name="default_location_slug" id="default_location_slug">
-                    <?php foreach ($all_locs as $slug => $loc_row) : ?>
-                        <option value="<?php echo esc_attr($slug); ?>" <?php selected($default_slug, $slug); ?>>
-                            <?php echo esc_html(isset($loc_row['label']) ? $loc_row['label'] : $slug); ?> (<?php echo esc_html($slug); ?>)
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <?php submit_button(__('Save default', 'clubworx-integration'), 'secondary', 'submit', false); ?>
-            </p>
-        </form>
-
-        <h3><?php esc_html_e('Master form styling', 'clubworx-integration'); ?></h3>
-        <p><?php esc_html_e('Choose which location’s Form Design settings are used on the master booking form before a visitor selects a location.', 'clubworx-integration'); ?></p>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php wp_nonce_field('clubworx_set_master_form_style_location'); ?>
-            <input type="hidden" name="action" value="clubworx_set_master_form_style_location" />
-            <p>
-                <label for="master_form_style_location"><?php esc_html_e('Initial styling location', 'clubworx-integration'); ?></label><br />
-                <select name="master_form_style_location" id="master_form_style_location">
-                    <option value="" <?php selected($master_form_style_slug, ''); ?>>
-                        <?php esc_html_e('Automatic (first location in master form list)', 'clubworx-integration'); ?>
-                    </option>
-                    <?php foreach ($all_locs as $slug => $loc_row) : ?>
-                        <option value="<?php echo esc_attr($slug); ?>" <?php selected($master_form_style_slug, $slug); ?>>
-                            <?php echo esc_html(isset($loc_row['label']) ? $loc_row['label'] : $slug); ?> (<?php echo esc_html($slug); ?>)
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <?php submit_button(__('Save master form styling', 'clubworx-integration'), 'secondary', 'submit', false); ?>
-            </p>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('clubworx_integration_settings_group');
+            echo '<input type="hidden" name="_clubworx_settings_tab" value="locations" />';
+            do_settings_sections('clubworx-integration-settings');
+            submit_button(__('Save location defaults', 'clubworx-integration'));
+            ?>
         </form>
 
         <h3><?php esc_html_e('Add location', 'clubworx-integration'); ?></h3>
