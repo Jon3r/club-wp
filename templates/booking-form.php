@@ -11,6 +11,22 @@ if (!defined('ABSPATH')) {
 if (!isset($clubworx_location_slug)) {
     $clubworx_location_slug = Clubworx_Locations::get_default_slug();
 }
+
+if (!isset($show_header)) {
+    $show_header = false;
+}
+
+if (!isset($clubworx_booking_header_title) || $clubworx_booking_header_title === '') {
+    $clubworx_booking_header_title = get_bloginfo('name');
+}
+
+if (!isset($clubworx_booking_submit_text) || $clubworx_booking_submit_text === '') {
+    $clubworx_booking_submit_text = __('Book My Trial Class', 'clubworx-integration');
+}
+
+if (!isset($clubworx_booking_secondary_text) || $clubworx_booking_secondary_text === '') {
+    $clubworx_booking_secondary_text = __('Submit Information Only', 'clubworx-integration');
+}
 ?>
 
 <div class="clubworx-booking-wrapper" data-account="<?php echo esc_attr($clubworx_location_slug); ?>">
@@ -19,6 +35,9 @@ if (!isset($clubworx_location_slug)) {
         <main class="main-content">
             <!-- Booking form -->
             <div class="booking-card">
+                <?php if ($show_header) : ?>
+                    <h2 class="clubworx-booking-header"><?php echo esc_html($clubworx_booking_header_title); ?></h2>
+                <?php endif; ?>
                 
                 <form id="trialBookingForm" class="booking-form">
                     <input type="hidden" name="clubworx_account" id="clubworxAccountField" value="<?php echo esc_attr($clubworx_location_slug); ?>" />
@@ -75,13 +94,7 @@ if (!isset($clubworx_location_slug)) {
                         
                         <div class="form-group" id="submitWithoutBookingContainer" style="display: none;">
                             <button type="button" id="submitWithoutBooking" class="btn btn-secondary submit-info-btn">
-                                <?php 
-                                $settings = get_option('clubworx_integration_settings', array());
-                                $secondary_text = isset($settings['form_secondary_button_text']) && !empty($settings['form_secondary_button_text']) 
-                                    ? esc_html($settings['form_secondary_button_text']) 
-                                    : __('Submit Information Only', 'clubworx-integration');
-                                echo $secondary_text;
-                                ?>
+                                <?php echo esc_html($clubworx_booking_secondary_text); ?>
                             </button>
                             <p class="form-helper-text"><?php _e('Just want program information? Submit your details and we\'ll get in touch. You can book your trial class below.', 'clubworx-integration'); ?></p>
                         </div>
@@ -137,13 +150,7 @@ if (!isset($clubworx_location_slug)) {
                     <div id="formStatus" class="form-status ready" style="display: none;"></div>
                     
                     <button type="submit" class="submit-btn">
-                        <?php 
-                        $settings = get_option('clubworx_integration_settings', array());
-                        $submit_text = isset($settings['form_submit_button_text']) && !empty($settings['form_submit_button_text']) 
-                            ? esc_html($settings['form_submit_button_text']) 
-                            : __('Book My Trial Class', 'clubworx-integration');
-                        echo $submit_text;
-                        ?>
+                        <?php echo esc_html($clubworx_booking_submit_text); ?>
                     </button>
                 </form>
             </div>

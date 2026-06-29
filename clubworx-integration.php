@@ -517,11 +517,45 @@ class Clubworx_Integration {
         $atts = shortcode_atts(array(
             'show_header' => 'false',
             'account' => '',
+            'header_title' => '',
+            'submit_button_text' => '',
+            'secondary_button_text' => '',
         ), $atts, 'clubworx_trial_booking');
 
         global $post;
         $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
         $clubworx_location_slug = Clubworx_Locations::resolve_single_account_from_shortcode($atts['account'], $post_id ? $post_id : null);
+        $clubworx_location = Clubworx_Locations::get($clubworx_location_slug);
+
+        $location_form = (is_array($clubworx_location) && isset($clubworx_location['form']) && is_array($clubworx_location['form']))
+            ? $clubworx_location['form']
+            : array();
+        $location_branding = (is_array($clubworx_location) && isset($clubworx_location['branding']) && is_array($clubworx_location['branding']))
+            ? $clubworx_location['branding']
+            : array();
+
+        $show_header = filter_var($atts['show_header'], FILTER_VALIDATE_BOOLEAN);
+        $header_title_attr = sanitize_text_field($atts['header_title']);
+        $submit_text_attr = sanitize_text_field($atts['submit_button_text']);
+        $secondary_text_attr = sanitize_text_field($atts['secondary_button_text']);
+
+        $clubworx_booking_header_title = $header_title_attr !== ''
+            ? $header_title_attr
+            : (isset($location_branding['club_display_name']) && $location_branding['club_display_name'] !== ''
+                ? $location_branding['club_display_name']
+                : get_bloginfo('name'));
+
+        $clubworx_booking_submit_text = $submit_text_attr !== ''
+            ? $submit_text_attr
+            : (isset($location_form['submit_button_text']) && $location_form['submit_button_text'] !== ''
+                ? $location_form['submit_button_text']
+                : __('Book My Trial Class', 'clubworx-integration'));
+
+        $clubworx_booking_secondary_text = $secondary_text_attr !== ''
+            ? $secondary_text_attr
+            : (isset($location_form['secondary_button_text']) && $location_form['secondary_button_text'] !== ''
+                ? $location_form['secondary_button_text']
+                : __('Submit Information Only', 'clubworx-integration'));
 
         // Ensure assets load even when the shortcode is inside a page builder block
         // (has_shortcode() only scans post_content, missing builder meta).
