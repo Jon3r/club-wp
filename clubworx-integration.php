@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.2.3
+ * Version: 3.2.4
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.2.3');
+define('CLUBWORX_INTEGRATION_VERSION', '3.2.4');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -289,6 +289,7 @@ class Clubworx_Integration {
         foreach (Clubworx_Locations::all() as $slug => $loc) {
             $custom_css .= $this->build_single_location_form_css($slug, $loc);
         }
+        $custom_css .= $this->build_master_form_base_css();
         if ($custom_css) {
             wp_add_inline_style('clubworx-booking-styles', $custom_css);
         }
@@ -751,11 +752,12 @@ class Clubworx_Integration {
     /**
      * Scoped CSS for one location's form settings (uses data-account).
      *
-     * @param string               $slug Location slug.
-     * @param array<string,mixed> $loc  Normalized location.
+     * @param string               $slug               Location slug.
+     * @param array<string,mixed> $loc                Normalized location.
+     * @param string|null          $wrapper_selector   Optional wrapper selector (defaults to data-account scoped).
      * @return string
      */
-    private function build_single_location_form_css($slug, $loc) {
+    private function build_single_location_form_css($slug, $loc, $wrapper_selector = null) {
         $f = isset($loc['form']) && is_array($loc['form']) ? $loc['form'] : array();
         $theme_integration = !empty($f['theme_integration']);
         $theme_colors = array();
@@ -783,7 +785,9 @@ class Clubworx_Integration {
         $css_vars['--clubworx-label-text-color'] = $pick('label_text_color', ($theme_integration && isset($theme_colors['text']) ? $theme_colors['text'] : '#000000'));
         $css_vars['--clubworx-border-radius'] = $pick('border_radius', '8px');
 
-        $sel = '.clubworx-booking-wrapper[data-account="' . esc_attr($slug) . '"]';
+        $sel = $wrapper_selector !== null
+            ? $wrapper_selector
+            : '.clubworx-booking-wrapper[data-account="' . esc_attr($slug) . '"]';
 
         $css = $sel . ' {' . "\n";
         foreach ($css_vars as $var => $value) {
@@ -885,6 +889,29 @@ class Clubworx_Integration {
     }
 
     /**
+     * Base form styles for the master booking form before a location is selected.
+     * Uses the first master-form location's Form Design settings so the wrapper
+     * matches single-location forms while data-account is still empty.
+     *
+     * @return string
+     */
+    private function build_master_form_base_css() {
+        $master_slugs = Clubworx_Locations::filter_master_form_slugs(
+            array_keys(Clubworx_Locations::all())
+        );
+        $slug = !empty($master_slugs[0])
+            ? $master_slugs[0]
+            : Clubworx_Locations::get_default_slug();
+        $loc = Clubworx_Locations::get($slug);
+        if (!$loc) {
+            return '';
+        }
+
+        $selector = '.clubworx-booking-wrapper--master:not([data-account]), .clubworx-booking-wrapper--master[data-account=""]';
+        return $this->build_single_location_form_css($slug, $loc, $selector);
+    }
+
+    /**
      * Output dynamic CSS for form customization
      */
     public function output_form_custom_css() {
@@ -897,6 +924,7 @@ class Clubworx_Integration {
         foreach (Clubworx_Locations::all() as $slug => $loc) {
             $css .= $this->build_single_location_form_css($slug, $loc);
         }
+        $css .= $this->build_master_form_base_css();
         $css .= '</style>' . "\n";
 
         echo $css;
