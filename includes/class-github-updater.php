@@ -53,9 +53,9 @@ class Clubworx_GitHub_Updater {
         if (!empty($this->github_username) && !empty($this->github_repo)) {
             add_filter('pre_set_site_transient_update_plugins', array($this, 'check_for_updates'));
             add_filter('plugins_api', array($this, 'plugin_info'), 10, 3);
+            add_filter('upgrader_pre_download', array($this, 'upgrader_pre_download'), 10, 4);
             add_filter('upgrader_source_selection', array($this, 'upgrader_source_selection'), 10, 4);
             add_filter('upgrader_post_install', array($this, 'upgrader_post_install'), 10, 3);
-            // Ensure authenticated API + package downloads for private repos.
             add_filter('http_request_args', array($this, 'add_github_auth_headers'), 10, 2);
         }
     }
@@ -78,6 +78,141 @@ class Clubworx_GitHub_Updater {
     }
     
     /**
+     * Headers for a specific GitHub download URL.
+     *
+     * @param string $url
+     * @return array<string,string>
+     */
+    private function get_download_headers($url) {
+        $headers = $this->get_github_headers();
+        if ($this->is_release_asset_url($url) || strpos($url, 'objects.githubusercontent.com') !== false) {
+            $headers['Accept'] = 'application/octet-stream';
+        }
+        return $headers;
+    }
+
+    /**
+     * @param string $url
+     * @return bool
+     */
+    private function is_release_asset_url($url) {
+        $pattern = '#github\.com/' . preg_quote($this->github_username . '/' . $this->github_repo, '#') . '/releases/download/#';
+        return (bool) preg_match($pattern, $url);
+    }
+
+    /**
+     * @param string $url
+     * @return bool
+     */
+    private function is_github_package_url($url) {
+        if (!is_string($url) || $url === '') {
+            return false;
+        }
+        $repo_path = '/' . $this->github_username . '/' . $this->github_repo;
+        return strpos($url, 'api.github.com/repos' . $repo_path) !== false
+            || strpos($url, 'codeload.github.com' . $repo_path) !== false
+            || strpos($url, 'github.com' . $repo_path . '/zipball') !== false
+            || $this->is_release_asset_url($url)
+            || strpos($url, 'objects.githubusercontent.com') !== false;
+    }
+
+    /**
+     * Download GitHub packages directly so private-repo auth survives redirects.
+     *
+     * @param mixed $reply
+     * @param string $package
+     * @param WP_Upgrader $upgrader
+     * @param array<string,mixed> $hook_extra
+     * @return mixed
+     */
+    public function upgrader_pre_download($reply, $package, $upgrader, $hook_extra = null) {
+        if (!empty($reply)) {
+            return $reply;
+        }
+        if (!is_array($hook_extra) || !isset($hook_extra['plugin'])) {
+            return $reply;
+        }
+
+        $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE);
+        if ($hook_extra['plugin'] !== $plugin_slug) {
+            return $reply;
+        }
+        if (!$this->is_github_package_url($package)) {
+            return $reply;
+        }
+
+        $downloaded = $this->download_github_package($package);
+        if (is_wp_error($downloaded)) {
+            error_log('Clubworx GitHub Updater: Download failed - ' . $downloaded->get_error_message());
+            return $downloaded;
+        }
+
+        error_log('Clubworx GitHub Updater: Downloaded package to ' . $downloaded);
+        return $downloaded;
+    }
+
+    /**
+     * @param string $url
+     * @return string|WP_Error
+     */
+    private function download_github_package($url) {
+        $response = wp_remote_get($url, array(
+            'timeout' => 300,
+            'redirection' => 5,
+            'headers' => $this->get_download_headers($url),
+        ));
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            $body = wp_remote_retrieve_body($response);
+            $snippet = is_string($body) ? substr($body, 0, 200) : '';
+            return new WP_Error(
+                'clubworx_github_download_failed',
+                sprintf(
+                    /* translators: 1: HTTP status code, 2: response snippet */
+                    __('GitHub download failed (HTTP %1$s). %2$s', 'clubworx-integration'),
+                    (string) $code,
+                    $snippet
+                )
+            );
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        if ($body === '' || $body === false) {
+            return new WP_Error(
+                'clubworx_github_download_empty',
+                __('GitHub download returned an empty package.', 'clubworx-integration')
+            );
+        }
+
+        if (!function_exists('wp_tempnam')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
+        $tmp = wp_tempnam($url);
+        if (!$tmp) {
+            return new WP_Error(
+                'clubworx_github_download_temp',
+                __('Could not create a temporary file for the GitHub download.', 'clubworx-integration')
+            );
+        }
+
+        $written = file_put_contents($tmp, $body);
+        if ($written === false || $written === 0) {
+            return new WP_Error(
+                'clubworx_github_download_write',
+                __('Could not write the downloaded GitHub package to disk.', 'clubworx-integration')
+            );
+        }
+
+        return $tmp;
+    }
+
+    /**
      * Add auth headers to GitHub API/package requests.
      *
      * @param array<string,mixed> $args
@@ -88,24 +223,19 @@ class Clubworx_GitHub_Updater {
         if (empty($this->github_token) || !is_string($url) || $url === '') {
             return $args;
         }
-        
-        $repo_path = '/' . $this->github_username . '/' . $this->github_repo;
-        $is_repo_api = strpos($url, 'api.github.com/repos' . $repo_path) !== false;
-        $is_repo_codeload = strpos($url, 'codeload.github.com' . $repo_path) !== false;
-        $is_repo_zipball = strpos($url, 'github.com' . $repo_path . '/zipball') !== false;
-        
-        if (!$is_repo_api && !$is_repo_codeload && !$is_repo_zipball) {
+
+        if (!$this->is_github_package_url($url)) {
             return $args;
         }
-        
+
         if (!isset($args['headers']) || !is_array($args['headers'])) {
             $args['headers'] = array();
         }
-        
-        foreach ($this->get_github_headers() as $key => $value) {
+
+        foreach ($this->get_download_headers($url) as $key => $value) {
             $args['headers'][$key] = $value;
         }
-        
+
         return $args;
     }
     
@@ -115,14 +245,14 @@ class Clubworx_GitHub_Updater {
      * @param string $source Extracted package path.
      * @return string|false
      */
-    private function resolve_package_root($source) {
+    private function resolve_package_root($source, $depth = 0) {
         global $wp_filesystem;
 
-        if (!$wp_filesystem || empty($source)) {
+        if (!$wp_filesystem || empty($source) || $depth > 5) {
             return false;
         }
 
-        $source = trailingslashit($source);
+        $source = trailingslashit(wp_normalize_path($source));
         if ($wp_filesystem->exists($source . 'clubworx-integration.php')) {
             return untrailingslashit($source);
         }
@@ -140,8 +270,80 @@ class Clubworx_GitHub_Updater {
             if ($wp_filesystem->exists(trailingslashit($candidate) . 'clubworx-integration.php')) {
                 return untrailingslashit($candidate);
             }
+            if (!empty($list[$subdir]['type']) && $list[$subdir]['type'] === 'd') {
+                $nested = $this->resolve_package_root($candidate, $depth + 1);
+                if ($nested !== false) {
+                    return $nested;
+                }
+            }
         }
 
+        return false;
+    }
+
+    /**
+     * Rename extracted package folder to the installed plugin directory slug.
+     *
+     * @param string $package_root
+     * @param string $plugin_dir
+     * @return string|false
+     */
+    private function rename_package_to_plugin_dir($package_root, $plugin_dir) {
+        global $wp_filesystem;
+
+        if (!$wp_filesystem) {
+            return false;
+        }
+
+        if (!function_exists('copy_dir')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
+        $package_root = wp_normalize_path(untrailingslashit($package_root));
+        $upgrade_base = wp_normalize_path(WP_CONTENT_DIR . '/upgrade');
+        $plugins_base = wp_normalize_path(WP_PLUGIN_DIR);
+
+        if (basename($package_root) === $plugin_dir) {
+            return trailingslashit($package_root);
+        }
+
+        $parent = wp_normalize_path(dirname($package_root));
+        $corrected = $parent . '/' . $plugin_dir;
+
+        // Never delete or stage inside the live plugins directory.
+        if (strpos($corrected, $plugins_base) === 0) {
+            $parent = $upgrade_base;
+            $corrected = $upgrade_base . '/' . $plugin_dir;
+        }
+
+        if (strpos($parent, $upgrade_base) !== 0) {
+            $parent = $upgrade_base;
+            $corrected = $upgrade_base . '/' . $plugin_dir;
+        }
+
+        if (!$wp_filesystem->is_dir($parent)) {
+            $wp_filesystem->mkdir($parent, FS_CHMOD_DIR);
+        }
+
+        if ($wp_filesystem->exists($corrected) && strpos($corrected, $plugins_base) !== 0) {
+            $wp_filesystem->delete($corrected, true);
+        }
+
+        if ($wp_filesystem->move($package_root, $corrected, true)) {
+            return trailingslashit($corrected);
+        }
+
+        if (!$wp_filesystem->is_dir($corrected)) {
+            $wp_filesystem->mkdir($corrected, FS_CHMOD_DIR);
+        }
+
+        $copied = copy_dir($package_root, $corrected);
+        if (!is_wp_error($copied)) {
+            $wp_filesystem->delete($package_root, true);
+            return trailingslashit($corrected);
+        }
+
+        error_log('Clubworx GitHub Updater: copy_dir failed - ' . $copied->get_error_message());
         return false;
     }
 
@@ -150,8 +352,6 @@ class Clubworx_GitHub_Updater {
      * overwrites wp-content/plugins/{your-folder}/ instead of creating repo-hash/.
      */
     public function upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra = null) {
-        global $wp_filesystem;
-
         if (!isset($hook_extra['plugin'])) {
             return $source;
         }
@@ -165,25 +365,23 @@ class Clubworx_GitHub_Updater {
         $package_root = $this->resolve_package_root($source);
         if ($package_root === false) {
             error_log('Clubworx GitHub Updater: Could not find clubworx-integration.php in update package at ' . $source);
-            return $source;
+            return new WP_Error(
+                'clubworx_invalid_package',
+                __('The GitHub release zip does not contain clubworx-integration.php.', 'clubworx-integration')
+            );
         }
 
-        $corrected = trailingslashit(dirname($package_root)) . $plugin_dir;
-        if (trailingslashit($package_root) === trailingslashit($corrected)) {
-            return $corrected;
+        $renamed = $this->rename_package_to_plugin_dir($package_root, $plugin_dir);
+        if ($renamed === false) {
+            error_log('Clubworx GitHub Updater: Failed to rename package from ' . $package_root . ' to ' . $plugin_dir);
+            return new WP_Error(
+                'clubworx_package_rename_failed',
+                __('The plugin update was downloaded but could not be prepared for installation.', 'clubworx-integration')
+            );
         }
 
-        if ($wp_filesystem->exists($corrected)) {
-            $wp_filesystem->delete($corrected, true);
-        }
-
-        if ($wp_filesystem->move($package_root, $corrected, true)) {
-            error_log('Clubworx GitHub Updater: Renamed package to ' . $corrected);
-            return $corrected;
-        }
-
-        error_log('Clubworx GitHub Updater: Failed to rename package from ' . $package_root . ' to ' . $corrected);
-        return $source;
+        error_log('Clubworx GitHub Updater: Prepared package at ' . $renamed);
+        return $renamed;
     }
 
     /**
@@ -385,15 +583,19 @@ class Clubworx_GitHub_Updater {
     private function format_release_row($release) {
         $version = ltrim($release['tag_name'], 'v');
         $download_url = '';
-        if (!empty($release['zipball_url'])) {
-            $download_url = $release['zipball_url'];
-        } elseif (!empty($release['assets']) && is_array($release['assets'])) {
+
+        // Prefer an attached .zip asset when present (cleaner folder structure).
+        if (!empty($release['assets']) && is_array($release['assets'])) {
             foreach ($release['assets'] as $asset) {
-                if (!empty($asset['browser_download_url']) && strpos($asset['browser_download_url'], '.zip') !== false) {
-                    $download_url = $asset['browser_download_url'];
-                    break;
+                if (empty($asset['browser_download_url']) || strpos($asset['browser_download_url'], '.zip') === false) {
+                    continue;
                 }
+                $download_url = $asset['browser_download_url'];
+                break;
             }
+        }
+        if ($download_url === '' && !empty($release['zipball_url'])) {
+            $download_url = $release['zipball_url'];
         }
 
         return array(
