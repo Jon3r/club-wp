@@ -85,10 +85,30 @@ class Clubworx_GitHub_Updater {
      */
     private function get_download_headers($url) {
         $headers = $this->get_github_headers();
-        if ($this->is_release_asset_url($url) || strpos($url, 'objects.githubusercontent.com') !== false) {
+
+        if (
+            $this->is_release_asset_url($url)
+            || $this->is_api_release_asset_url($url)
+            || strpos($url, 'objects.githubusercontent.com') !== false
+            || strpos($url, 'codeload.github.com') !== false
+            || strpos($url, '/zipball/') !== false
+            || strpos($url, '/archive/') !== false
+        ) {
             $headers['Accept'] = 'application/octet-stream';
         }
+
         return $headers;
+    }
+
+    /**
+     * GitHub API endpoint for a release asset (returns JSON unless Accept is octet-stream).
+     *
+     * @param string $url
+     * @return bool
+     */
+    private function is_api_release_asset_url($url) {
+        $pattern = '#api\.github\.com/repos/' . preg_quote($this->github_username . '/' . $this->github_repo, '#') . '/releases/assets/#';
+        return (bool) preg_match($pattern, $url);
     }
 
     /**
@@ -153,6 +173,7 @@ class Clubworx_GitHub_Updater {
         }
         $repo_path = $this->github_username . '/' . $this->github_repo;
         return strpos($url, 'api.github.com/repos/' . $repo_path) !== false
+            || $this->is_api_release_asset_url($url)
             || strpos($url, 'codeload.github.com/' . $repo_path) !== false
             || strpos($url, 'github.com/' . $repo_path . '/zipball') !== false
             || strpos($url, 'github.com/' . $repo_path . '/archive/') !== false
@@ -233,16 +254,34 @@ class Clubworx_GitHub_Updater {
             );
         }
 
+        if (!$this->is_zip_binary($body)) {
+            $snippet = substr($body, 0, 120);
+            error_log('Clubworx GitHub Updater: Non-zip response from ' . $url . ' — ' . $snippet);
+            return new WP_Error(
+                'clubworx_github_download_not_zip',
+                __('GitHub did not return a valid zip file. Check your GitHub token has repo access.', 'clubworx-integration')
+            );
+        }
+
         if (!function_exists('wp_tempnam')) {
             require_once ABSPATH . 'wp-admin/includes/file.php';
         }
 
-        $tmp = wp_tempnam($url);
+        $tmp = wp_tempnam('clubworx-plugin-update.zip');
         if (!$tmp) {
             return new WP_Error(
                 'clubworx_github_download_temp',
                 __('Could not create a temporary file for the GitHub download.', 'clubworx-integration')
             );
+        }
+
+        if (substr($tmp, -4) !== '.zip') {
+            $tmp_zip = $tmp . '.zip';
+            if (file_exists($tmp_zip)) {
+                @unlink($tmp_zip);
+            }
+            @rename($tmp, $tmp_zip);
+            $tmp = $tmp_zip;
         }
 
         $written = file_put_contents($tmp, $body);
@@ -254,6 +293,14 @@ class Clubworx_GitHub_Updater {
         }
 
         return $tmp;
+    }
+
+    /**
+     * @param string $data
+     * @return bool
+     */
+    private function is_zip_binary($data) {
+        return is_string($data) && strlen($data) >= 4 && substr($data, 0, 2) === 'PK';
     }
 
     /**
@@ -729,10 +776,20 @@ class Clubworx_GitHub_Updater {
         if (!empty($release['assets']) && is_array($release['assets'])) {
             foreach ($release['assets'] as $asset) {
                 $name = isset($asset['name']) ? (string) $asset['name'] : '';
-                if ($name !== '' && preg_match('/clubworx.*\.zip$/i', $name) && !empty($asset['url'])) {
-                    return $asset['url'];
+                if ($name === '' || !preg_match('/\.zip$/i', $name)) {
+                    continue;
                 }
-                if ($name !== '' && preg_match('/clubworx.*\.zip$/i', $name) && !empty($asset['browser_download_url'])) {
+                if (preg_match('/clubworx/i', $name) && !empty($asset['browser_download_url'])) {
+                    return $asset['browser_download_url'];
+                }
+            }
+
+            foreach ($release['assets'] as $asset) {
+                $name = isset($asset['name']) ? (string) $asset['name'] : '';
+                if (stripos($name, 'source code') !== false) {
+                    continue;
+                }
+                if (!empty($asset['browser_download_url']) && preg_match('/\.zip$/i', $name)) {
                     return $asset['browser_download_url'];
                 }
             }
@@ -740,18 +797,6 @@ class Clubworx_GitHub_Updater {
 
         if (!empty($release['zipball_url'])) {
             return $release['zipball_url'];
-        }
-
-        if (!empty($release['assets']) && is_array($release['assets'])) {
-            foreach ($release['assets'] as $asset) {
-                $name = isset($asset['name']) ? (string) $asset['name'] : '';
-                if (stripos($name, 'source code') !== false) {
-                    continue;
-                }
-                if (!empty($asset['browser_download_url']) && strpos($asset['browser_download_url'], '.zip') !== false) {
-                    return $asset['browser_download_url'];
-                }
-            }
         }
 
         return '';
