@@ -412,6 +412,26 @@ class Clubworx_Locations {
     }
 
     /**
+     * Location slugs shown on the master booking form (excludes legacy "primary").
+     *
+     * @param array<int,string> $slugs
+     * @return array<int,string>
+     */
+    public static function filter_master_form_slugs($slugs) {
+        $filtered = array_values(array_filter($slugs, function ($slug) {
+            return sanitize_key($slug) !== 'primary';
+        }));
+
+        /**
+         * Adjust which locations appear on [clubworx_trial_booking_master].
+         *
+         * @param array<int,string> $filtered
+         * @param array<int,string> $slugs     Original slug list before filtering.
+         */
+        return apply_filters('clubworx_master_form_location_slugs', $filtered, $slugs);
+    }
+
+    /**
      * Slug suitable for new locations from a label.
      */
     public static function slugify($label) {
