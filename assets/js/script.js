@@ -1442,11 +1442,7 @@ class TrialClassBookingManager {
                 return this.filterKidsClassesByBracket(classes, ageGroup).length > 0;
             });
         } else if (group === 'adults' && ageGroup) {
-            // Adult classes may be stored outside adults.general in API buckets.
-            availableDays = Array.from(this.collectScheduleDayKeys()).filter(dayKey => {
-                const dayClasses = this.getAllClassesForDay(dayKey);
-                return dayClasses.filter(className => this.isAdultClassName(className)).length > 0;
-            });
+            availableDays = this.getAdultScheduleDays();
         } else if (group === 'women') {
             const schedule = this.schedule[group];
             if (schedule) {
@@ -1501,6 +1497,9 @@ class TrialClassBookingManager {
             return `No classes available for Teens (${ag})${dayBit}.`;
         }
         if (group === 'adults') {
+            if (!this.scheduleHasAnyClasses()) {
+                return 'No schedule data for this location. Check ClubWorx API settings for this page.';
+            }
             return `No classes available for Adults${dayBit}.`;
         }
         return `No classes available for ${group} ${ag}${dayBit}.`;
@@ -1526,8 +1525,7 @@ class TrialClassBookingManager {
         } else if (group === 'teens') {
             availableClasses = this.getTeensClassesForDay(ageGroup, day);
         } else if (group === 'adults' && ageGroup) {
-            const dayClasses = this.getAllClassesForDay(day);
-            availableClasses = dayClasses.filter(className => this.isAdultClassName(className));
+            availableClasses = this.getAdultClassesForDay(day);
         } else if (group === 'women') {
             availableClasses = this.schedule[group][day] || [];
         }
@@ -1577,6 +1575,16 @@ class TrialClassBookingManager {
         const womenSchedule = this.schedule && this.schedule.women ? this.schedule.women : {};
         Object.keys(womenSchedule).forEach(d => days.add(d));
         return days;
+    }
+    
+    /**
+     * Whether the loaded schedule contains any classes at all.
+     */
+    scheduleHasAnyClasses() {
+        if (!this.schedule) {
+            return false;
+        }
+        return Array.from(this.collectScheduleDayKeys()).some(dayKey => this.getAllClassesForDay(dayKey).length > 0);
     }
     
     // Gather all classes for a given day from every schedule bucket.
@@ -1629,9 +1637,64 @@ class TrialClassBookingManager {
         if (typeof className !== 'string') {
             return false;
         }
-        const hasAdultMarker = /(adults?|all\s*levels|core\s*skills|foundations?)/i.test(className);
+        const hasAdultMarker = /(adults?|all\s*levels|core\s*skills|foundations?|gi\s*class)/i.test(className);
         const hasNonAdultMarker = /(mini\s*warriors?|tiny\s*warriors?|warriors?\s*\(8\s*[-–]\s*12\)|5\s*[-–]\s*7|3\s*[-–]\s*4|8\s*[-–]\s*12|teens?|13\+|combatives)/i.test(className);
         return hasAdultMarker && !hasNonAdultMarker;
+    }
+    
+    isTeenClassName(className) {
+        if (typeof className !== 'string') {
+            return false;
+        }
+        return /(teens?\s*\(?\s*13\+|13\+|teens?\s*&|combatives)/i.test(className);
+    }
+    
+    /**
+     * Days that have bookable adult classes (schedule buckets first, then name fallback).
+     *
+     * @return {string[]}
+     */
+    getAdultScheduleDays() {
+        const days = new Set();
+        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
+        Object.keys(adultsSchedule).forEach(ag => {
+            Object.keys(adultsSchedule[ag] || {}).forEach(dayKey => {
+                if (this.getAdultClassesForDay(dayKey).length > 0) {
+                    days.add(dayKey);
+                }
+            });
+        });
+        if (days.size > 0) {
+            return Array.from(days);
+        }
+        return Array.from(this.collectScheduleDayKeys()).filter(dayKey => {
+            return this.getAllClassesForDay(dayKey).filter(className => this.isAdultClassName(className)).length > 0;
+        });
+    }
+    
+    /**
+     * Adult classes for one day — trust API adults.* buckets, then name-based fallback.
+     *
+     * @param {string} day
+     * @return {string[]}
+     */
+    getAdultClassesForDay(day) {
+        const fromBuckets = [];
+        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
+        Object.keys(adultsSchedule).forEach(ag => {
+            const list = adultsSchedule[ag] && adultsSchedule[ag][day];
+            if (Array.isArray(list) && list.length) {
+                fromBuckets.push(...list);
+            }
+        });
+        const unique = [...new Set(fromBuckets)];
+        if (unique.length > 0) {
+            const filtered = unique.filter(className => !this.isKidsClassName(className) && !this.isTeenClassName(className));
+            if (filtered.length > 0) {
+                return filtered;
+            }
+        }
+        return this.getAllClassesForDay(day).filter(className => this.isAdultClassName(className));
     }
     
     // Filter kids classes by visible age bracket in class name.
