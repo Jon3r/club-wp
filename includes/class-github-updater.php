@@ -101,6 +101,49 @@ class Clubworx_GitHub_Updater {
     }
 
     /**
+     * Read the installed version from the plugin header (source of truth for WP admin).
+     *
+     * @return string
+     */
+    public function get_installed_version() {
+        if (!function_exists('get_plugin_data')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $data = get_plugin_data(CLUBWORX_INTEGRATION_PLUGIN_FILE, false, false);
+        if (!empty($data['Version']) && is_string($data['Version'])) {
+            return trim($data['Version']);
+        }
+
+        return defined('CLUBWORX_INTEGRATION_VERSION') ? CLUBWORX_INTEGRATION_VERSION : '0.0.0';
+    }
+
+    /**
+     * Normalize a GitHub tag into a WordPress-friendly semver string.
+     *
+     * @param string $tag_name
+     * @return string
+     */
+    private function normalize_release_version($tag_name) {
+        $version = ltrim((string) $tag_name, 'vV');
+        $version = trim($version);
+        if ($version === '') {
+            return '';
+        }
+
+        // WordPress version_compare works best with major.minor.patch.
+        if (preg_match('/^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/', $version, $matches)) {
+            $normalized = $matches[1] . '.' . $matches[2] . '.' . $matches[3];
+            if (!empty($matches[4])) {
+                $normalized .= '.' . $matches[4];
+            }
+            return $normalized;
+        }
+
+        return $version;
+    }
+
+    /**
      * @param string $url
      * @return bool
      */
@@ -108,10 +151,11 @@ class Clubworx_GitHub_Updater {
         if (!is_string($url) || $url === '') {
             return false;
         }
-        $repo_path = '/' . $this->github_username . '/' . $this->github_repo;
-        return strpos($url, 'api.github.com/repos' . $repo_path) !== false
-            || strpos($url, 'codeload.github.com' . $repo_path) !== false
-            || strpos($url, 'github.com' . $repo_path . '/zipball') !== false
+        $repo_path = $this->github_username . '/' . $this->github_repo;
+        return strpos($url, 'api.github.com/repos/' . $repo_path) !== false
+            || strpos($url, 'codeload.github.com/' . $repo_path) !== false
+            || strpos($url, 'github.com/' . $repo_path . '/zipball') !== false
+            || strpos($url, 'github.com/' . $repo_path . '/archive/') !== false
             || $this->is_release_asset_url($url)
             || strpos($url, 'objects.githubusercontent.com') !== false;
     }
@@ -393,6 +437,8 @@ class Clubworx_GitHub_Updater {
      * @return bool|WP_Error|array<string,mixed>
      */
     public function upgrader_post_install($response, $hook_extra, $result) {
+        global $wp_filesystem;
+
         if (is_wp_error($response) || !isset($hook_extra['plugin'])) {
             return $response;
         }
@@ -402,16 +448,41 @@ class Clubworx_GitHub_Updater {
             return $response;
         }
 
+        if (!function_exists('copy_dir')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
         $plugin_dir = dirname($plugin_slug);
-        $target_dir = trailingslashit(WP_PLUGIN_DIR) . $plugin_dir;
+        $target_dir = untrailingslashit(trailingslashit(WP_PLUGIN_DIR) . $plugin_dir);
+
+        if (!empty($result['source']) && is_string($result['source']) && $wp_filesystem) {
+            $source = wp_normalize_path(untrailingslashit($result['source']));
+            $target = wp_normalize_path($target_dir);
+
+            if ($source !== $target && $wp_filesystem->exists($source . '/clubworx-integration.php')) {
+                if ($wp_filesystem->is_dir($target)) {
+                    $wp_filesystem->delete($target, true);
+                }
+                if (!$wp_filesystem->move($source, $target, true)) {
+                    $copied = copy_dir($source, $target);
+                    if (is_wp_error($copied)) {
+                        return new WP_Error(
+                            'clubworx_update_copy_failed',
+                            __('Plugin update downloaded but could not be copied into the plugin folder.', 'clubworx-integration')
+                        );
+                    }
+                    $wp_filesystem->delete($source, true);
+                }
+            }
+        }
 
         if (!empty($result['destination']) && is_string($result['destination'])) {
-            $result['destination'] = untrailingslashit($target_dir);
+            $result['destination'] = $target_dir;
             $result['destination_name'] = $plugin_dir;
         }
 
-        // Bust plugin update + release caches so the new version shows immediately.
         $this->clear_cache();
+        $this->refresh_wordpress_update_transient();
 
         return $result;
     }
@@ -423,25 +494,38 @@ class Clubworx_GitHub_Updater {
         if (empty($transient->checked)) {
             return $transient;
         }
-        
+
         $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE);
-        $current_version = CLUBWORX_INTEGRATION_VERSION;
-        
-        // Get latest release from GitHub
+        $current_version = $this->get_installed_version();
         $latest_release = $this->get_latest_release();
-        
-        if ($latest_release && version_compare($current_version, $latest_release['version'], '<')) {
-            $plugin_data = array(
+
+        if (
+            !$latest_release
+            || empty($latest_release['version'])
+            || empty($latest_release['download_url'])
+        ) {
+            if ($latest_release && empty($latest_release['download_url'])) {
+                error_log('Clubworx GitHub Updater: Latest release has no download URL for ' . $plugin_slug);
+            }
+            return $transient;
+        }
+
+        if (version_compare($current_version, $latest_release['version'], '<')) {
+            $transient->response[$plugin_slug] = (object) array(
                 'slug' => dirname($plugin_slug),
                 'plugin' => $plugin_slug,
                 'new_version' => $latest_release['version'],
                 'url' => $latest_release['url'],
                 'package' => $latest_release['download_url'],
+                'id' => $latest_release['url'],
+                'icons' => array(),
+                'banners' => array(),
+                'banners_rtl' => array(),
+                'tested' => get_bloginfo('version'),
+                'requires_php' => '7.4',
             );
-            
-            $transient->response[$plugin_slug] = (object) $plugin_data;
         }
-        
+
         return $transient;
     }
     
@@ -459,16 +543,50 @@ class Clubworx_GitHub_Updater {
      */
     public function force_check_updates() {
         $this->clear_cache();
-        
-        // Get fresh release data (force refresh)
         $latest_release = $this->get_latest_release(true);
-        
-        // If we got a release, also clear WordPress update cache to trigger refresh
+
         if ($latest_release) {
-            delete_site_transient('update_plugins');
+            $this->refresh_wordpress_update_transient();
         }
-        
+
         return $latest_release;
+    }
+
+    /**
+     * Rebuild WordPress plugin update transient so Dashboard → Updates shows the release.
+     */
+    public function refresh_wordpress_update_transient() {
+        delete_site_transient('update_plugins');
+        if (!function_exists('wp_update_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/update.php';
+        }
+        wp_update_plugins();
+    }
+
+    /**
+     * List releases from GitHub (for diagnostics).
+     *
+     * @return array<int,array<string,mixed>>|false
+     */
+    public function get_all_releases() {
+        $all_releases_url = sprintf(
+            '%s/%s/%s/releases?per_page=20',
+            $this->github_api_url,
+            $this->github_username,
+            $this->github_repo
+        );
+
+        $all_response = wp_remote_get($all_releases_url, array(
+            'timeout' => 10,
+            'headers' => $this->get_github_headers(),
+        ));
+
+        if (is_wp_error($all_response) || wp_remote_retrieve_response_code($all_response) !== 200) {
+            return false;
+        }
+
+        $all_releases = json_decode(wp_remote_retrieve_body($all_response), true);
+        return is_array($all_releases) ? $all_releases : false;
     }
     
     /**
@@ -581,10 +699,19 @@ class Clubworx_GitHub_Updater {
      * @return array<string,string>
      */
     private function format_release_row($release) {
-        $version = ltrim($release['tag_name'], 'v');
+        $tag_name = isset($release['tag_name']) ? (string) $release['tag_name'] : '';
+        $version = $this->normalize_release_version($tag_name);
         $download_url = $this->pick_release_download_url($release);
 
+        if ($version === '') {
+            error_log('Clubworx GitHub Updater: Release tag has no usable version: ' . $tag_name);
+        }
+        if ($download_url === '') {
+            error_log('Clubworx GitHub Updater: Release ' . $tag_name . ' has no download URL');
+        }
+
         return array(
+            'tag_name' => $tag_name,
             'version' => $version,
             'url' => isset($release['html_url']) ? $release['html_url'] : '',
             'download_url' => $download_url,
@@ -602,6 +729,9 @@ class Clubworx_GitHub_Updater {
         if (!empty($release['assets']) && is_array($release['assets'])) {
             foreach ($release['assets'] as $asset) {
                 $name = isset($asset['name']) ? (string) $asset['name'] : '';
+                if ($name !== '' && preg_match('/clubworx.*\.zip$/i', $name) && !empty($asset['url'])) {
+                    return $asset['url'];
+                }
                 if ($name !== '' && preg_match('/clubworx.*\.zip$/i', $name) && !empty($asset['browser_download_url'])) {
                     return $asset['browser_download_url'];
                 }

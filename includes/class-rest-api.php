@@ -2643,9 +2643,9 @@ class Clubworx_REST_API {
         // Force check and inject update into WordPress update system
         $latest_release = $updater->force_check_updates();
         
-        $current_version = defined('CLUBWORX_INTEGRATION_VERSION') ? CLUBWORX_INTEGRATION_VERSION : '1.0.0';
-        
-        if (!$latest_release) {
+        $current_version = $updater->get_installed_version();
+
+        if (!$latest_release || empty($latest_release['version'])) {
             // Check for draft releases
             $all_releases = $updater->get_all_releases();
             $draft_releases = array();
@@ -2707,6 +2707,19 @@ class Clubworx_REST_API {
             ), 500);
         }
         
+        if (empty($latest_release['download_url'])) {
+            return new WP_REST_Response(array(
+                'success' => false,
+                'message' => 'Latest GitHub release has no downloadable zip package',
+                'current_version' => $current_version,
+                'latest_version' => $latest_release['version'],
+                'release_url' => $latest_release['url'],
+                'error_details' => array(
+                    'Publish a release using ./scripts/publish-release.sh so clubworx-integration-' . $latest_release['version'] . '.zip is attached.',
+                ),
+            ), 500);
+        }
+
         $update_available = version_compare($current_version, $latest_release['version'], '<');
         
         // Log for debugging
@@ -2721,6 +2734,7 @@ class Clubworx_REST_API {
             'success' => true,
             'current_version' => $current_version,
             'latest_version' => $latest_release['version'],
+            'download_url_set' => !empty($latest_release['download_url']),
             'update_available' => $update_available,
             'release_url' => $latest_release['url'],
             'release_notes' => $latest_release['release_notes'],

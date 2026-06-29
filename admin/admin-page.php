@@ -298,6 +298,8 @@ $rest_schedule_default_url = add_query_arg(
             <div class="clubworx-empty-state">
                 <p><?php _e('No bookings yet. Share your booking page to start receiving trial class requests!', 'clubworx-integration'); ?></p>
                 <p><strong><?php _e('Shortcode:', 'clubworx-integration'); ?></strong> <code>[clubworx_trial_booking]</code></p>
+                <p><strong><?php _e('Master form (location dropdown):', 'clubworx-integration'); ?></strong> <code>[clubworx_trial_booking_master]</code></p>
+                <p class="description"><?php _e('Optional: limit locations with account="slug-one,slug-two" or use master="true" on the standard shortcode.', 'clubworx-integration'); ?></p>
             </div>
         <?php endif; ?>
     </div>

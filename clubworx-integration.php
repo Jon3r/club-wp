@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.1.9.1
+ * Version: 3.2.1
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.1.9.1');
+define('CLUBWORX_INTEGRATION_VERSION', '3.2.1');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -77,8 +77,9 @@ class Clubworx_Integration {
         add_action('add_meta_boxes', array($this, 'register_location_meta_box'), 10);
         add_action('save_post', array($this, 'save_location_meta_box'), 10, 2);
         
-        // Add shortcode
+        // Add shortcodes
         add_shortcode('clubworx_trial_booking', array($this, 'render_booking_form'));
+        add_shortcode('clubworx_trial_booking_master', array($this, 'render_master_booking_form'));
         
         // Enqueue scripts and styles
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
@@ -264,7 +265,7 @@ class Clubworx_Integration {
         // Pages that embed the shortcode via a page builder call enqueue_booking_assets()
         // directly from render_booking_form() instead.
         global $post;
-        if (!is_a($post, 'WP_Post') || !has_shortcode($post->post_content, 'clubworx_trial_booking')) {
+        if (!is_a($post, 'WP_Post') || !$this->page_has_booking_shortcode($post)) {
             return;
         }
         $this->enqueue_booking_assets();
@@ -365,6 +366,9 @@ class Clubworx_Integration {
             'restNonce' => wp_create_nonce('wp_rest'),
             'defaultLocation' => $default_slug,
             'locations' => $locations_payload,
+            'locationLabels' => array_map(function ($loc) {
+                return isset($loc['label']) ? $loc['label'] : '';
+            }, Clubworx_Locations::all()),
         );
 
         if (!is_array($resolved_payload)) {
@@ -510,6 +514,37 @@ class Clubworx_Integration {
     }
     
     /**
+     * Whether the current page content includes a booking form shortcode.
+     *
+     * @param WP_Post $post
+     * @return bool
+     */
+    private function page_has_booking_shortcode($post) {
+        if (!is_a($post, 'WP_Post')) {
+            return false;
+        }
+        return has_shortcode($post->post_content, 'clubworx_trial_booking')
+            || has_shortcode($post->post_content, 'clubworx_trial_booking_master');
+    }
+
+    /**
+     * Master booking form — all locations (or account list) with a location dropdown.
+     *
+     * @param array<string,string>|string $atts
+     * @return string
+     */
+    public function render_master_booking_form($atts) {
+        if (!is_array($atts)) {
+            $atts = array();
+        }
+        $atts['master'] = 'true';
+        if (empty($atts['account'])) {
+            $atts['account'] = 'all';
+        }
+        return $this->render_booking_form($atts);
+    }
+
+    /**
      * Render booking form shortcode
      */
     public function render_booking_form($atts) {
@@ -517,15 +552,38 @@ class Clubworx_Integration {
         $atts = shortcode_atts(array(
             'show_header' => 'false',
             'account' => '',
+            'master' => 'false',
         ), $atts, 'clubworx_trial_booking');
 
         global $post;
         $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
-        $clubworx_location_slug = Clubworx_Locations::resolve_single_account_from_shortcode($atts['account'], $post_id ? $post_id : null);
+        $account_attr = isset($atts['account']) ? (string) $atts['account'] : '';
+        $clubworx_master_form = filter_var($atts['master'], FILTER_VALIDATE_BOOLEAN)
+            || strtolower(trim($account_attr)) === 'all';
+
+        if ($clubworx_master_form) {
+            $clubworx_location_choices = Clubworx_Locations::expand_account_slugs(
+                $account_attr !== '' ? $account_attr : 'all',
+                $post_id ? $post_id : null
+            );
+            $clubworx_location_slug = '';
+        } else {
+            $clubworx_location_slug = Clubworx_Locations::resolve_single_account_from_shortcode($account_attr, $post_id ? $post_id : null);
+            $clubworx_location_choices = array($clubworx_location_slug);
+        }
+
+        $clubworx_all_locations = Clubworx_Locations::all();
 
         // Ensure assets load even when the shortcode is inside a page builder block
         // (has_shortcode() only scans post_content, missing builder meta).
         $this->enqueue_booking_assets();
+
+        if ($clubworx_master_form) {
+            wp_localize_script('clubworx-booking-script', 'clubworxBookingFormMode', array(
+                'masterForm' => true,
+                'locationChoices' => $clubworx_location_choices,
+            ));
+        }
 
         // Start output buffering
         ob_start();
@@ -829,7 +887,7 @@ class Clubworx_Integration {
      */
     public function output_form_custom_css() {
         global $post;
-        if (!is_a($post, 'WP_Post') || !has_shortcode($post->post_content, 'clubworx_trial_booking')) {
+        if (!is_a($post, 'WP_Post') || !$this->page_has_booking_shortcode($post)) {
             return;
         }
 

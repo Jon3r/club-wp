@@ -11,9 +11,18 @@ if (!defined('ABSPATH')) {
 if (!isset($clubworx_location_slug)) {
     $clubworx_location_slug = Clubworx_Locations::get_default_slug();
 }
+if (!isset($clubworx_master_form)) {
+    $clubworx_master_form = false;
+}
+if (!isset($clubworx_location_choices)) {
+    $clubworx_location_choices = array($clubworx_location_slug);
+}
+if (!isset($clubworx_all_locations)) {
+    $clubworx_all_locations = Clubworx_Locations::all();
+}
 ?>
 
-<div class="clubworx-booking-wrapper" data-account="<?php echo esc_attr($clubworx_location_slug); ?>">
+<div class="clubworx-booking-wrapper<?php echo $clubworx_master_form ? ' clubworx-booking-wrapper--master' : ''; ?>" data-account="<?php echo esc_attr($clubworx_location_slug); ?>"<?php echo $clubworx_master_form ? ' data-master-form="true"' : ''; ?>>
     <!-- Main container -->
     <div class="main-layout">
         <main class="main-content">
@@ -22,6 +31,27 @@ if (!isset($clubworx_location_slug)) {
                 
                 <form id="trialBookingForm" class="booking-form">
                     <input type="hidden" name="clubworx_account" id="clubworxAccountField" value="<?php echo esc_attr($clubworx_location_slug); ?>" />
+
+                    <?php if ($clubworx_master_form && count($clubworx_location_choices) > 0) : ?>
+                    <div class="form-section clubworx-location-section">
+                        <h3><?php _e('Select Location', 'clubworx-integration'); ?></h3>
+                        <div class="form-group">
+                            <label for="clubworxLocationSelect"><?php _e('Which location are you enquiring about?', 'clubworx-integration'); ?> *</label>
+                            <select id="clubworxLocationSelect" name="clubworxLocation" required>
+                                <option value=""><?php _e('Select a location', 'clubworx-integration'); ?></option>
+                                <?php foreach ($clubworx_location_choices as $choice_slug) : ?>
+                                    <?php
+                                    $choice_label = isset($clubworx_all_locations[$choice_slug]['label'])
+                                        ? $clubworx_all_locations[$choice_slug]['label']
+                                        : $choice_slug;
+                                    ?>
+                                    <option value="<?php echo esc_attr($choice_slug); ?>"><?php echo esc_html($choice_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                     <!-- Personal Information Section -->
                     <div class="form-section">
                         <h3><?php _e('Personal Information', 'clubworx-integration'); ?></h3>

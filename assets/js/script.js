@@ -54,11 +54,30 @@ class TrialClassBookingManager {
         }
     }
 
+    isMasterForm() {
+        const mode = typeof clubworxBookingFormMode !== 'undefined' ? clubworxBookingFormMode : {};
+        if (mode.masterForm) {
+            return true;
+        }
+        const form = document.getElementById('trialBookingForm');
+        const wrap = form ? form.closest('.clubworx-booking-wrapper') : document.querySelector('.clubworx-booking-wrapper');
+        return !!(wrap && wrap.getAttribute('data-master-form') === 'true');
+    }
+
     getAccountSlug() {
         const cfg = typeof clubworxBookingSettings !== 'undefined' ? clubworxBookingSettings : {};
         const def = cfg.defaultLocation || 'primary';
         const form = document.getElementById('trialBookingForm');
         const wrap = form ? form.closest('.clubworx-booking-wrapper') : document.querySelector('.clubworx-booking-wrapper');
+
+        if (this.isMasterForm()) {
+            const locationSelect = document.getElementById('clubworxLocationSelect');
+            if (locationSelect && locationSelect.value && String(locationSelect.value).trim()) {
+                return String(locationSelect.value).trim();
+            }
+            return '';
+        }
+
         const ds = wrap && wrap.getAttribute('data-account');
         if (ds && String(ds).trim()) {
             return String(ds).trim();
@@ -68,6 +87,20 @@ class TrialClassBookingManager {
             return String(hid.value).trim();
         }
         return def;
+    }
+
+    setActiveLocation(slug) {
+        const form = document.getElementById('trialBookingForm');
+        const wrap = form ? form.closest('.clubworx-booking-wrapper') : document.querySelector('.clubworx-booking-wrapper');
+        const accountField = document.getElementById('clubworxAccountField');
+        const value = slug ? String(slug).trim() : '';
+
+        if (wrap) {
+            wrap.setAttribute('data-account', value);
+        }
+        if (accountField) {
+            accountField.value = value;
+        }
     }
 
     getCxSettings() {
@@ -149,8 +182,18 @@ class TrialClassBookingManager {
                 this.attributionTracker = null;
             }
             
-            // Load schedule data from API
-            await this.loadScheduleData();
+            // Load schedule data from API (master form waits for location selection)
+            if (this.isMasterForm() && !this.getAccountSlug()) {
+                this.updateFormStatus('Select a location to continue', 'processing');
+                console.log('📍 Master form — waiting for location selection');
+
+                if (this.elements.locationSelect && this.elements.locationSelect.options.length === 2) {
+                    this.elements.locationSelect.selectedIndex = 1;
+                    await this.handleLocationChange();
+                }
+            } else {
+                await this.loadScheduleData();
+            }
             
             this.bindEvents();
             console.log('✅ Events bound successfully');
@@ -167,11 +210,19 @@ class TrialClassBookingManager {
     
     // Load schedule data dynamically from API
     async loadScheduleData() {
-        console.log('📅 Loading schedule data from API...');
+        const accountSlug = this.getAccountSlug();
+        if (!accountSlug) {
+            this.schedule = null;
+            this.scheduleLoaded = false;
+            this.updateFormStatus('Select a location to continue', 'processing');
+            return;
+        }
+
+        console.log('📅 Loading schedule data from API for', accountSlug);
         this.updateFormStatus('Loading schedule...', 'processing');
         
         try {
-            const account = encodeURIComponent(this.getAccountSlug());
+            const account = encodeURIComponent(accountSlug);
             const response = await fetch(`${this.baseUrl}schedule-simple?account=${account}`, {
                 method: 'GET',
                 headers: {
@@ -254,7 +305,11 @@ class TrialClassBookingManager {
             ageGroupContainer: document.getElementById('ageGroupContainer'),
             ageGroupLabel: document.getElementById('ageGroupLabel'),
             dayContainer: document.getElementById('dayContainer'),
-            classContainer: document.getElementById('classContainer')
+            classContainer: document.getElementById('classContainer'),
+
+            wrapper: document.querySelector('.clubworx-booking-wrapper'),
+            accountField: document.getElementById('clubworxAccountField'),
+            locationSelect: document.getElementById('clubworxLocationSelect')
         };
     }
     
@@ -296,6 +351,14 @@ class TrialClassBookingManager {
             }
         });
         
+        // Location selection (master form)
+        if (this.elements.locationSelect) {
+            this.elements.locationSelect.addEventListener('change', () => {
+                this.clearFieldError('locationSelect');
+                this.handleLocationChange();
+            });
+        }
+
         // Program info selection handler
         if (this.elements.programInfo) {
             this.elements.programInfo.addEventListener('change', () => this.handleProgramInfoChange());
@@ -972,6 +1035,15 @@ class TrialClassBookingManager {
         let isValid = true;
         let errorFields = [];
         let firstErrorField = null;
+
+        if (this.isMasterForm() && !this.getAccountSlug()) {
+            isValid = false;
+            errorFields.push('Location');
+            if (this.elements.locationSelect) {
+                firstErrorField = this.elements.locationSelect;
+                this.elements.locationSelect.classList.add('error');
+            }
+        }
         
         Object.keys(this.validationRules).forEach(fieldName => {
             if (!this.validateField(fieldName)) {
@@ -1130,6 +1202,14 @@ class TrialClassBookingManager {
         let isValid = true;
         let errorFields = [];
         
+        if (this.isMasterForm() && !this.getAccountSlug()) {
+            isValid = false;
+            errorFields.push('Location');
+            if (this.elements.locationSelect) {
+                this.elements.locationSelect.classList.add('error');
+            }
+        }
+
         requiredFields.forEach(fieldName => {
             if (!this.validateField(fieldName)) {
                 isValid = false;
@@ -1176,6 +1256,56 @@ class TrialClassBookingManager {
         }
     }
     
+    async handleLocationChange() {
+        const slug = this.elements.locationSelect ? this.elements.locationSelect.value : '';
+        console.log('📍 Location changed to:', slug || '(none)');
+
+        this.setActiveLocation(slug);
+        this.resetBookingFields();
+
+        if (!slug) {
+            this.schedule = null;
+            this.scheduleLoaded = false;
+            this.updateFormStatus('Select a location to continue', 'processing');
+            return;
+        }
+
+        try {
+            await this.loadScheduleData();
+            if (this.scheduleLoaded) {
+                this.updateFormStatus('Ready');
+            }
+        } catch (error) {
+            console.error('❌ Failed to load schedule for location:', error);
+            this.updateFormStatus('Failed to load schedule for this location', 'error');
+        }
+    }
+
+    resetBookingFields() {
+        const fields = ['programInfo', 'contactPreference', 'ageGroup', 'day', 'class'];
+        fields.forEach((fieldName) => {
+            const el = this.elements[fieldName];
+            if (el) {
+                el.value = '';
+            }
+            this.clearFieldError(fieldName);
+        });
+
+        const hide = [
+            'contactPreferenceContainer',
+            'submitWithoutBookingContainer',
+            'bookingSection',
+            'ageGroupContainer',
+            'dayContainer',
+            'classContainer'
+        ];
+        hide.forEach((key) => {
+            if (this.elements[key]) {
+                this.elements[key].style.display = 'none';
+            }
+        });
+    }
+
     // Handle program info selection change
     handleProgramInfoChange() {
         console.log('🚀 handleProgramInfoChange called');
