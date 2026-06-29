@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.1.0');
+define('CLUBWORX_INTEGRATION_VERSION', '3.1.1');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
