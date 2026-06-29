@@ -1331,8 +1331,11 @@ class Clubworx_REST_API {
                 $base_url = $base_url . '/api/v2';
             }
 
-            $start_date = date('Y-m-d', strtotime('monday this week'));
-            $end_date = date('Y-m-d', strtotime('monday next week'));
+            $loc_tz_str = isset($loc['timetable']['timezone']) && $loc['timetable']['timezone'] !== '' ? $loc['timetable']['timezone'] : (function_exists('wp_timezone_string') ? wp_timezone_string() : 'UTC');
+            if (empty($loc_tz_str)) { $loc_tz_str = 'UTC'; }
+            try { $loc_tz_obj = new DateTimeZone($loc_tz_str); } catch (Exception $e) { $loc_tz_obj = new DateTimeZone('UTC'); }
+            $start_date = (new DateTime('monday this week', $loc_tz_obj))->format('Y-m-d');
+            $end_date   = (new DateTime('monday next week', $loc_tz_obj))->format('Y-m-d');
 
             $query_params = array(
                 'account_key' => $clubworx_api_key,
@@ -1462,9 +1465,17 @@ class Clubworx_REST_API {
             return $this->empty_schedule_tree();
         }
         
-        // Get current week boundaries for filtering
-        $current_week_start = strtotime('monday this week');
-        $current_week_end = strtotime('sunday this week 23:59:59');
+        // Get current week boundaries in the gym's timezone (Australia/Sydney).
+        // ClubWorx returns event_start_at with +10:00/+11:00 offsets, so comparing
+        // raw UTC timestamps against a UTC-based strtotime('monday this week') would
+        // filter out Monday morning AEST classes (their UTC time falls on Sunday).
+        $tz_str = function_exists('wp_timezone_string') ? wp_timezone_string() : 'UTC';
+        if (empty($tz_str)) { $tz_str = 'UTC'; }
+        try { $tz_obj = new DateTimeZone($tz_str); } catch (Exception $e) { $tz_obj = new DateTimeZone('UTC'); }
+        $week_start_dt = new DateTime('monday this week 00:00:00', $tz_obj);
+        $week_end_dt   = new DateTime('sunday this week 23:59:59', $tz_obj);
+        $current_week_start = $week_start_dt->getTimestamp();
+        $current_week_end   = $week_end_dt->getTimestamp();
         // Process each event and collect valid classes
         foreach ($events as $index => $event) {
             // Filter events to only include current week
