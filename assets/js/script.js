@@ -1315,6 +1315,12 @@ class TrialClassBookingManager {
                 ageGroupDropdown.appendChild(optionElement);
             });
             
+            // Single option (e.g. Adults → General): auto-select and load days.
+            if (this.ageGroupOptions[group].length === 1) {
+                ageGroupDropdown.value = this.ageGroupOptions[group][0].value;
+                this.handleAgeGroupChange();
+            }
+            
             console.log(`📊 Age group options populated for ${group}:`, this.ageGroupOptions[group]);
         }
     }
@@ -1436,10 +1442,11 @@ class TrialClassBookingManager {
                 return this.filterKidsClassesByBracket(classes, ageGroup).length > 0;
             });
         } else if (group === 'adults' && ageGroup) {
-            const schedule = this.schedule[group][ageGroup];
-            if (schedule) {
-                availableDays = Object.keys(schedule);
-            }
+            // Adult classes may be stored outside adults.general in API buckets.
+            availableDays = Array.from(this.collectScheduleDayKeys()).filter(dayKey => {
+                const dayClasses = this.getAllClassesForDay(dayKey);
+                return dayClasses.filter(className => this.isAdultClassName(className)).length > 0;
+            });
         } else if (group === 'women') {
             const schedule = this.schedule[group];
             if (schedule) {
@@ -1467,6 +1474,7 @@ class TrialClassBookingManager {
             this.showContainer(this.elements.dayContainer);
             this.elements.day.required = true;
             console.log('✅ Days populated successfully:', availableDays);
+            this.updateFormStatus('', 'ready');
         } else {
             console.warn('⚠️ No available days found for:', group, ageGroup);
             this.updateFormStatus(this.formatNoClassesMessage(group, ageGroup, null), 'error');
@@ -1541,6 +1549,7 @@ class TrialClassBookingManager {
             this.showContainer(this.elements.classContainer);
             this.elements.class.required = true;
             console.log('✅ Classes populated successfully:', availableClasses);
+            this.updateFormStatus('', 'ready');
         } else {
             console.warn('⚠️ No available classes found for:', group, ageGroup, day);
             this.updateFormStatus(this.formatNoClassesMessage(group, ageGroup, day), 'error');
