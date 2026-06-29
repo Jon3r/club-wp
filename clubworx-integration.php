@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.1.6
+ * Version: 3.1.7
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.1.6');
+define('CLUBWORX_INTEGRATION_VERSION', '3.1.7');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -754,20 +754,41 @@ class Clubworx_Integration {
         $css .= '}' . "\n";
 
         $css .= $sel . ' .form-group input,' . "\n" . $sel . ' .form-group select,' . "\n" . $sel . ' .form-group textarea {' . "\n";
-        $css .= '    border-color: var(--clubworx-field-border-color) !important;' . "\n";
+        $css .= '    border: 2px solid var(--clubworx-field-border-color) !important;' . "\n";
         $css .= '    background-color: var(--clubworx-field-bg-color) !important;' . "\n";
         $css .= '    color: var(--clubworx-field-text-color) !important;' . "\n";
         $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
         $css .= '}' . "\n";
 
+        $field_text = $css_vars['--clubworx-field-text-color'];
+        $select_arrow = $this->build_select_arrow_uri($field_text);
+        $css .= $sel . ' .form-group select,' . "\n" . $sel . ' .booking-form select {' . "\n";
+        $css .= '    border: 2px solid var(--clubworx-field-border-color) !important;' . "\n";
+        $css .= '    background-color: var(--clubworx-field-bg-color) !important;' . "\n";
+        $css .= '    color: var(--clubworx-field-text-color) !important;' . "\n";
+        $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
+        $css .= '    -webkit-appearance: none !important;' . "\n";
+        $css .= '    appearance: none !important;' . "\n";
+        $css .= '    background-image: ' . $select_arrow . ' !important;' . "\n";
+        $css .= '    background-repeat: no-repeat !important;' . "\n";
+        $css .= '    background-position: right 0.9rem center !important;' . "\n";
+        $css .= '    background-size: 1rem !important;' . "\n";
+        $css .= '    padding-right: 2.4rem !important;' . "\n";
+        $css .= '}' . "\n";
+
+        $css .= $sel . ' .form-group select option {' . "\n";
+        $css .= '    color: var(--clubworx-field-text-color) !important;' . "\n";
+        $css .= '    background-color: var(--clubworx-field-bg-color) !important;' . "\n";
+        $css .= '}' . "\n";
+
         $focus_color = $css_vars['--clubworx-field-focus-color'];
         $css .= $sel . ' .form-group input:focus,' . "\n" . $sel . ' .form-group select:focus,' . "\n" . $sel . ' .form-group textarea:focus {' . "\n";
-        $css .= '    border-color: var(--clubworx-field-focus-color) !important;' . "\n";
+        $css .= '    border: 2px solid var(--clubworx-field-focus-color) !important;' . "\n";
         $css .= '    box-shadow: 0 0 0 3px rgba(' . $this->hex_to_rgb($focus_color) . ', 0.1) !important;' . "\n";
         $css .= '}' . "\n";
 
         $css .= $sel . ' .form-group input.error,' . "\n" . $sel . ' .form-group select.error,' . "\n" . $sel . ' .form-group textarea.error {' . "\n";
-        $css .= '    border-color: var(--clubworx-field-error-color) !important;' . "\n";
+        $css .= '    border: 2px solid var(--clubworx-field-error-color) !important;' . "\n";
         $css .= '}' . "\n";
 
         $css .= $sel . ' .form-section {' . "\n";
@@ -886,6 +907,21 @@ class Clubworx_Integration {
         return $css;
     }
     
+    /**
+     * SVG chevron for styled select boxes (stroke matches field text color).
+     *
+     * @param string $hex Hex color.
+     * @return string CSS url() value.
+     */
+    private function build_select_arrow_uri($hex) {
+        $hex = ltrim((string) $hex, '#');
+        if (strlen($hex) === 3) {
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+        }
+        $stroke = '%23' . strtolower($hex);
+        return "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='{$stroke}' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
+    }
+
     /**
      * Convert hex color to RGB for rgba() usage
      */

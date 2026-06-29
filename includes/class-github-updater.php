@@ -110,44 +110,84 @@ class Clubworx_GitHub_Updater {
     }
     
     /**
-     * Rename the GitHub folder (repo-name-version) to the correct plugin slug
-     * This ensures WordPress overwrites the existing plugin folder
+     * Locate the directory inside an extracted package that contains clubworx-integration.php.
+     *
+     * @param string $source Extracted package path.
+     * @return string|false
+     */
+    private function resolve_package_root($source) {
+        global $wp_filesystem;
+
+        if (!$wp_filesystem || empty($source)) {
+            return false;
+        }
+
+        $source = trailingslashit($source);
+        if ($wp_filesystem->exists($source . 'clubworx-integration.php')) {
+            return untrailingslashit($source);
+        }
+
+        $list = $wp_filesystem->dirlist($source);
+        if (!is_array($list)) {
+            return false;
+        }
+
+        foreach (array_keys($list) as $subdir) {
+            if ($subdir === '.' || $subdir === '..') {
+                continue;
+            }
+            $candidate = $source . $subdir;
+            if ($wp_filesystem->exists(trailingslashit($candidate) . 'clubworx-integration.php')) {
+                return untrailingslashit($candidate);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Rename the GitHub folder to the installed plugin directory slug so WordPress
+     * overwrites wp-content/plugins/{your-folder}/ instead of creating repo-hash/.
      */
     public function upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra = null) {
         global $wp_filesystem;
-        
-        // Ensure $hook_extra is available (might be null in some WP versions or contexts)
-        if (!isset($hook_extra['plugin']) && !isset($hook_extra['theme'])) {
+
+        if (!isset($hook_extra['plugin'])) {
             return $source;
         }
-        
-        // Identify if this update is for our plugin
-        $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE); // pjja-booking/clubworx-integration.php
-        $plugin_dir = dirname($plugin_slug); // pjja-booking
-        
-        if (isset($hook_extra['plugin']) && $hook_extra['plugin'] === $plugin_slug) {
-            // New destination path with correct slug
-            $new_source = trailingslashit($remote_source) . $plugin_dir;
-            
-            // If the source is already correct, do nothing
-            if (trailingslashit($source) === trailingslashit($new_source)) {
-                return $source;
-            }
-            
-            // Rename the folder
-            if ($wp_filesystem->move($source, $new_source)) {
-                return trailingslashit($new_source);
-            }
+
+        $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE);
+        if ($hook_extra['plugin'] !== $plugin_slug) {
+            return $source;
         }
-        
+
+        $plugin_dir = dirname($plugin_slug);
+        $package_root = $this->resolve_package_root($source);
+        if ($package_root === false) {
+            error_log('Clubworx GitHub Updater: Could not find clubworx-integration.php in update package at ' . $source);
+            return $source;
+        }
+
+        $corrected = trailingslashit(dirname($package_root)) . $plugin_dir;
+        if (trailingslashit($package_root) === trailingslashit($corrected)) {
+            return $corrected;
+        }
+
+        if ($wp_filesystem->exists($corrected)) {
+            $wp_filesystem->delete($corrected, true);
+        }
+
+        if ($wp_filesystem->move($package_root, $corrected, true)) {
+            error_log('Clubworx GitHub Updater: Renamed package to ' . $corrected);
+            return $corrected;
+        }
+
+        error_log('Clubworx GitHub Updater: Failed to rename package from ' . $package_root . ' to ' . $corrected);
         return $source;
     }
-    
+
     /**
-     * Ensure installed package ends up in the active plugin directory.
-     *
-     * Some hosts/flows may report success but keep files in a temp repo-named
-     * directory; this guarantees overwrite of the actual plugin folder.
+     * After install, ensure WordPress reports the correct destination folder.
      *
      * @param bool|WP_Error $response
      * @param array<string,mixed> $hook_extra
@@ -155,47 +195,27 @@ class Clubworx_GitHub_Updater {
      * @return bool|WP_Error|array<string,mixed>
      */
     public function upgrader_post_install($response, $hook_extra, $result) {
-        global $wp_filesystem;
-        
-        if (is_wp_error($response)) {
+        if (is_wp_error($response) || !isset($hook_extra['plugin'])) {
             return $response;
         }
-        if (!isset($hook_extra['plugin'])) {
-            return $response;
-        }
-        
+
         $plugin_slug = plugin_basename(CLUBWORX_INTEGRATION_PLUGIN_FILE);
         if ($hook_extra['plugin'] !== $plugin_slug) {
             return $response;
         }
-        
-        if (empty($result['destination']) || !is_string($result['destination'])) {
-            return $response;
+
+        $plugin_dir = dirname($plugin_slug);
+        $target_dir = trailingslashit(WP_PLUGIN_DIR) . $plugin_dir;
+
+        if (!empty($result['destination']) && is_string($result['destination'])) {
+            $result['destination'] = untrailingslashit($target_dir);
+            $result['destination_name'] = $plugin_dir;
         }
-        
-        $target_dir = trailingslashit(WP_PLUGIN_DIR) . dirname($plugin_slug);
-        $current_destination = untrailingslashit($result['destination']);
-        $target_destination = untrailingslashit($target_dir);
-        
-        if ($current_destination === $target_destination) {
-            return $result;
-        }
-        
-        // Remove stale target dir first so move succeeds reliably.
-        if ($wp_filesystem->is_dir($target_destination)) {
-            $wp_filesystem->delete($target_destination, true);
-        }
-        
-        if ($wp_filesystem->move($current_destination, $target_destination, true)) {
-            $result['destination'] = $target_destination;
-            $result['destination_name'] = basename($target_destination);
-            return $result;
-        }
-        
-        return new WP_Error(
-            'clubworx_update_move_failed',
-            __('Plugin update extracted, but final plugin directory move failed.', 'clubworx-integration')
-        );
+
+        // Bust plugin update + release caches so the new version shows immediately.
+        $this->clear_cache();
+
+        return $result;
     }
     
     /**
@@ -294,35 +314,13 @@ class Clubworx_GitHub_Updater {
             if (isset($release['message'])) {
                 error_log('Clubworx GitHub Updater: Error message: ' . $release['message']);
             }
-            
-            // If 404, try checking all releases (might be a draft)
-            if ($status_code === 404) {
-                $all_releases_url = sprintf(
-                    '%s/%s/%s/releases',
-                    $this->github_api_url,
-                    $this->github_username,
-                    $this->github_repo
-                );
-                
-                $all_response = wp_remote_get($all_releases_url, array(
-                    'timeout' => 10,
-                    'headers' => $this->get_github_headers(),
-                ));
-                
-                if (!is_wp_error($all_response) && wp_remote_retrieve_response_code($all_response) === 200) {
-                    $all_releases = json_decode(wp_remote_retrieve_body($all_response), true);
-                    if (is_array($all_releases) && !empty($all_releases)) {
-                        error_log('Clubworx GitHub Updater: Found ' . count($all_releases) . ' releases, but /latest returned 404. This might mean the latest release is a draft.');
-                        // Check if there's a draft release
-                        foreach ($all_releases as $rel) {
-                            if (isset($rel['draft']) && $rel['draft'] === true) {
-                                error_log('Clubworx GitHub Updater: Found draft release: ' . (isset($rel['tag_name']) ? $rel['tag_name'] : 'unknown'));
-                            }
-                        }
-                    }
-                }
+
+            $fallback = $this->get_latest_published_release();
+            if ($fallback) {
+                set_transient($cache_key, $fallback, HOUR_IN_SECONDS);
+                return $fallback;
             }
-            
+
             return false;
         }
         
@@ -332,32 +330,78 @@ class Clubworx_GitHub_Updater {
         }
         
         // Extract version from tag (remove 'v' prefix if present)
-        $version = ltrim($release['tag_name'], 'v');
-        
-        // Find zipball URL
-        $download_url = '';
-        if (isset($release['zipball_url'])) {
-            $download_url = $release['zipball_url'];
-        } elseif (isset($release['assets']) && is_array($release['assets'])) {
-            foreach ($release['assets'] as $asset) {
-                if (isset($asset['browser_download_url']) && strpos($asset['browser_download_url'], '.zip') !== false) {
-                    $download_url = $asset['browser_download_url'];
-                    break;
-                }
-            }
-        }
-        
-        $result = array(
-            'version' => $version,
-            'url' => isset($release['html_url']) ? $release['html_url'] : '',
-            'download_url' => $download_url,
-            'release_notes' => isset($release['body']) ? $release['body'] : '',
-        );
+        $result = $this->format_release_row($release);
         
         // Cache for 1 hour
         set_transient($cache_key, $result, HOUR_IN_SECONDS);
         
         return $result;
+    }
+
+    /**
+     * First published (non-draft) release from /releases when /releases/latest fails.
+     *
+     * @return array<string,string>|false
+     */
+    private function get_latest_published_release() {
+        $all_releases_url = sprintf(
+            '%s/%s/%s/releases',
+            $this->github_api_url,
+            $this->github_username,
+            $this->github_repo
+        );
+
+        $all_response = wp_remote_get($all_releases_url, array(
+            'timeout' => 10,
+            'headers' => $this->get_github_headers(),
+        ));
+
+        if (is_wp_error($all_response) || wp_remote_retrieve_response_code($all_response) !== 200) {
+            return false;
+        }
+
+        $all_releases = json_decode(wp_remote_retrieve_body($all_response), true);
+        if (!is_array($all_releases) || empty($all_releases)) {
+            return false;
+        }
+
+        foreach ($all_releases as $rel) {
+            if (!empty($rel['draft']) || !empty($rel['prerelease'])) {
+                continue;
+            }
+            if (empty($rel['tag_name'])) {
+                continue;
+            }
+            return $this->format_release_row($rel);
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $release
+     * @return array<string,string>
+     */
+    private function format_release_row($release) {
+        $version = ltrim($release['tag_name'], 'v');
+        $download_url = '';
+        if (!empty($release['zipball_url'])) {
+            $download_url = $release['zipball_url'];
+        } elseif (!empty($release['assets']) && is_array($release['assets'])) {
+            foreach ($release['assets'] as $asset) {
+                if (!empty($asset['browser_download_url']) && strpos($asset['browser_download_url'], '.zip') !== false) {
+                    $download_url = $asset['browser_download_url'];
+                    break;
+                }
+            }
+        }
+
+        return array(
+            'version' => $version,
+            'url' => isset($release['html_url']) ? $release['html_url'] : '',
+            'download_url' => $download_url,
+            'release_notes' => isset($release['body']) ? $release['body'] : '',
+        );
     }
     
     /**

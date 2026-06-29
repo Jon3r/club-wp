@@ -336,11 +336,11 @@ input.error:focus, select.error:focus, textarea.error:focus {
 .form-group textarea {
     width: 100%;
     padding: 0.875rem 1rem;
-    border: 2px solid var(--border-color);
-    border-radius: 0.5rem;
+    border: 2px solid var(--clubworx-field-border-color, var(--border-color));
+    border-radius: var(--clubworx-border-radius, 0.5rem);
     font-size: 1rem;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
+    background-color: var(--clubworx-field-bg-color, var(--bg-secondary));
+    color: var(--clubworx-field-text-color, var(--text-primary));
     transition: var(--transition-fast);
     font-family: inherit;
 }
@@ -358,15 +358,15 @@ input.error:focus, select.error:focus, textarea.error:focus {
 }
 
 .form-group select option {
-    color: var(--text-primary);
-    background: var(--bg-secondary);
+    color: var(--clubworx-field-text-color, var(--text-primary));
+    background-color: var(--clubworx-field-bg-color, var(--bg-secondary));
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: var(--accent-color);
+    border-color: var(--clubworx-field-focus-color, var(--accent-color));
     box-shadow: 0 0 0 3px rgba(6, 147, 227, 0.1);
 }
 
