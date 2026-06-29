@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Internal / dev documentation (keep README + CHANGELOG on GitHub)
+*.md
+!README.md
+!CHANGELOG.md
+
+# Local build output
+build/
+release/

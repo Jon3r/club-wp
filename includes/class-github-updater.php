@@ -582,21 +582,7 @@ class Clubworx_GitHub_Updater {
      */
     private function format_release_row($release) {
         $version = ltrim($release['tag_name'], 'v');
-        $download_url = '';
-
-        // Prefer an attached .zip asset when present (cleaner folder structure).
-        if (!empty($release['assets']) && is_array($release['assets'])) {
-            foreach ($release['assets'] as $asset) {
-                if (empty($asset['browser_download_url']) || strpos($asset['browser_download_url'], '.zip') === false) {
-                    continue;
-                }
-                $download_url = $asset['browser_download_url'];
-                break;
-            }
-        }
-        if ($download_url === '' && !empty($release['zipball_url'])) {
-            $download_url = $release['zipball_url'];
-        }
+        $download_url = $this->pick_release_download_url($release);
 
         return array(
             'version' => $version,
@@ -604,6 +590,41 @@ class Clubworx_GitHub_Updater {
             'download_url' => $download_url,
             'release_notes' => isset($release['body']) ? $release['body'] : '',
         );
+    }
+
+    /**
+     * Pick the best download URL for a GitHub release.
+     *
+     * @param array<string,mixed> $release
+     * @return string
+     */
+    private function pick_release_download_url($release) {
+        if (!empty($release['assets']) && is_array($release['assets'])) {
+            foreach ($release['assets'] as $asset) {
+                $name = isset($asset['name']) ? (string) $asset['name'] : '';
+                if ($name !== '' && preg_match('/clubworx.*\.zip$/i', $name) && !empty($asset['browser_download_url'])) {
+                    return $asset['browser_download_url'];
+                }
+            }
+        }
+
+        if (!empty($release['zipball_url'])) {
+            return $release['zipball_url'];
+        }
+
+        if (!empty($release['assets']) && is_array($release['assets'])) {
+            foreach ($release['assets'] as $asset) {
+                $name = isset($asset['name']) ? (string) $asset['name'] : '';
+                if (stripos($name, 'source code') !== false) {
+                    continue;
+                }
+                if (!empty($asset['browser_download_url']) && strpos($asset['browser_download_url'], '.zip') !== false) {
+                    return $asset['browser_download_url'];
+                }
+            }
+        }
+
+        return '';
     }
     
     /**

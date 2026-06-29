@@ -1,0 +1,62 @@
+name: Publish plugin release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify plugin version matches tag
+        run: |
+          FILE_VERSION=$(php -r "preg_match(\"/define\\('CLUBWORX_INTEGRATION_VERSION', '([^']+)'/\", file_get_contents('clubworx-integration.php'), \$m); echo \$m[1];")
+          HEADER_VERSION=$(php -r "preg_match('/\\* Version: ([^\s]+)/', file_get_contents('clubworx-integration.php'), \$m); echo \$m[1];")
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ] || [ "$HEADER_VERSION" != "$TAG_VERSION" ]; then
+            echo "Version mismatch."
+            echo "Tag:            ${TAG_VERSION}"
+            echo "Plugin header:  ${HEADER_VERSION}"
+            echo "Plugin constant: ${FILE_VERSION}"
+            exit 1
+          fi
+
+      - name: Build installable plugin zip
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PLUGIN_DIR="clubworx-integration"
+          ZIP_NAME="clubworx-integration-${VERSION}.zip"
+          rm -rf build release
+          mkdir -p "build/${PLUGIN_DIR}"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='build' \
+            --exclude='release' \
+            --exclude='.DS_Store' \
+            ./ "build/${PLUGIN_DIR}/"
+          mkdir -p release
+          (cd build && zip -r "../release/${ZIP_NAME}" "${PLUGIN_DIR}")
+          ls -lh "release/${ZIP_NAME}"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Version ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: release/clubworx-integration-${{ steps.version.outputs.version }}.zip
