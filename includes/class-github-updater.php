@@ -71,8 +71,7 @@ class Clubworx_GitHub_Updater {
             'User-Agent' => 'WordPress-Clubworx-Integration',
         );
         if (!empty($this->github_token)) {
-            // GitHub still supports token auth for REST and codeload requests.
-            $headers['Authorization'] = 'token ' . $this->github_token;
+            $headers['Authorization'] = 'Bearer ' . $this->github_token;
         }
         return $headers;
     }
@@ -86,18 +85,25 @@ class Clubworx_GitHub_Updater {
     private function get_download_headers($url) {
         $headers = $this->get_github_headers();
 
-        if (
-            $this->is_release_asset_url($url)
-            || $this->is_api_release_asset_url($url)
-            || strpos($url, 'objects.githubusercontent.com') !== false
-            || strpos($url, 'codeload.github.com') !== false
-            || strpos($url, '/zipball/') !== false
-            || strpos($url, '/archive/') !== false
-        ) {
+        // Only direct release/CDN URLs accept octet-stream. API endpoints (zipball,
+        // releases/assets metadata) require the GitHub JSON media type or return 415.
+        if ($this->is_direct_binary_download_url($url)) {
             $headers['Accept'] = 'application/octet-stream';
         }
 
         return $headers;
+    }
+
+    /**
+     * URLs that serve the zip binary directly (not GitHub JSON API endpoints).
+     *
+     * @param string $url
+     * @return bool
+     */
+    private function is_direct_binary_download_url($url) {
+        return $this->is_release_asset_url($url)
+            || strpos($url, 'objects.githubusercontent.com') !== false
+            || strpos($url, 'codeload.github.com') !== false;
     }
 
     /**
@@ -221,6 +227,8 @@ class Clubworx_GitHub_Updater {
      * @return string|WP_Error
      */
     private function download_github_package($url) {
+        $url = $this->resolve_package_download_url($url);
+
         $response = wp_remote_get($url, array(
             'timeout' => 300,
             'redirection' => 5,
@@ -293,6 +301,36 @@ class Clubworx_GitHub_Updater {
         }
 
         return $tmp;
+    }
+
+    /**
+     * Normalize API/zipball URLs to a browser download URL when possible.
+     *
+     * @param string $url
+     * @return string
+     */
+    private function resolve_package_download_url($url) {
+        if (
+            !$this->is_api_release_asset_url($url)
+            && strpos($url, '/zipball/') === false
+            && strpos($url, '/tarball/') === false
+        ) {
+            return $url;
+        }
+
+        $latest = $this->get_latest_release(true);
+        if ($latest && !empty($latest['download_url'])) {
+            $resolved = $latest['download_url'];
+            if (
+                !$this->is_api_release_asset_url($resolved)
+                && strpos($resolved, '/zipball/') === false
+                && strpos($resolved, '/tarball/') === false
+            ) {
+                return $resolved;
+            }
+        }
+
+        return $url;
     }
 
     /**
@@ -773,14 +811,19 @@ class Clubworx_GitHub_Updater {
      * @return string
      */
     private function pick_release_download_url($release) {
+        $tag_name = isset($release['tag_name']) ? (string) $release['tag_name'] : '';
+
         if (!empty($release['assets']) && is_array($release['assets'])) {
             foreach ($release['assets'] as $asset) {
                 $name = isset($asset['name']) ? (string) $asset['name'] : '';
                 if ($name === '' || !preg_match('/\.zip$/i', $name)) {
                     continue;
                 }
-                if (preg_match('/clubworx/i', $name) && !empty($asset['browser_download_url'])) {
-                    return $asset['browser_download_url'];
+                if (preg_match('/clubworx/i', $name)) {
+                    $browser = $this->asset_browser_download_url($asset, $tag_name);
+                    if ($browser !== '') {
+                        return $browser;
+                    }
                 }
             }
 
@@ -789,17 +832,42 @@ class Clubworx_GitHub_Updater {
                 if (stripos($name, 'source code') !== false) {
                     continue;
                 }
-                if (!empty($asset['browser_download_url']) && preg_match('/\.zip$/i', $name)) {
-                    return $asset['browser_download_url'];
+                if (preg_match('/\.zip$/i', $name)) {
+                    $browser = $this->asset_browser_download_url($asset, $tag_name);
+                    if ($browser !== '') {
+                        return $browser;
+                    }
                 }
             }
         }
 
-        if (!empty($release['zipball_url'])) {
-            return $release['zipball_url'];
+        return '';
+    }
+
+    /**
+     * Prefer browser_download_url; never return the API asset JSON endpoint.
+     *
+     * @param array<string,mixed> $asset
+     * @param string $tag_name
+     * @return string
+     */
+    private function asset_browser_download_url($asset, $tag_name) {
+        if (!empty($asset['browser_download_url']) && is_string($asset['browser_download_url'])) {
+            return $asset['browser_download_url'];
         }
 
-        return '';
+        $name = isset($asset['name']) ? (string) $asset['name'] : '';
+        if ($name === '' || $tag_name === '') {
+            return '';
+        }
+
+        return sprintf(
+            'https://github.com/%s/%s/releases/download/%s/%s',
+            $this->github_username,
+            $this->github_repo,
+            rawurlencode($tag_name),
+            rawurlencode($name)
+        );
     }
     
     /**
