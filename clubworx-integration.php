@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.1.0
+ * Version: 3.1.1
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
