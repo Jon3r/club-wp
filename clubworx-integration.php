@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.1.7
+ * Version: 3.1.8
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.1.7');
+define('CLUBWORX_INTEGRATION_VERSION', '3.1.8');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -767,13 +767,17 @@ class Clubworx_Integration {
         $css .= '    background-color: var(--clubworx-field-bg-color) !important;' . "\n";
         $css .= '    color: var(--clubworx-field-text-color) !important;' . "\n";
         $css .= '    border-radius: var(--clubworx-border-radius) !important;' . "\n";
+        $css .= '    box-sizing: border-box !important;' . "\n";
+        $css .= '    min-height: calc(1rem * 1.5 + 0.875rem * 2 + 4px) !important;' . "\n";
+        $css .= '    height: auto !important;' . "\n";
+        $css .= '    line-height: 1.5 !important;' . "\n";
+        $css .= '    padding: 0.875rem 2.4rem 0.875rem 1rem !important;' . "\n";
         $css .= '    -webkit-appearance: none !important;' . "\n";
         $css .= '    appearance: none !important;' . "\n";
         $css .= '    background-image: ' . $select_arrow . ' !important;' . "\n";
         $css .= '    background-repeat: no-repeat !important;' . "\n";
         $css .= '    background-position: right 0.9rem center !important;' . "\n";
         $css .= '    background-size: 1rem !important;' . "\n";
-        $css .= '    padding-right: 2.4rem !important;' . "\n";
         $css .= '}' . "\n";
 
         $css .= $sel . ' .form-group select option {' . "\n";
