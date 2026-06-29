@@ -208,6 +208,7 @@ if (isset($_GET['error'])) {
                 <h3><?php esc_html_e('Shortcodes', 'clubworx-integration'); ?></h3>
                 <p><?php esc_html_e('Booking form:', 'clubworx-integration'); ?> <code>[clubworx_trial_booking]</code></p>
                 <p><?php esc_html_e('Optional location:', 'clubworx-integration'); ?> <code>[clubworx_trial_booking account="studio-b"]</code></p>
+                <p><?php esc_html_e('Location-specific labels:', 'clubworx-integration'); ?> <code>[clubworx_trial_booking account="studio-b" show_header="true" header_title="Studio B" submit_button_text="Book Studio B Trial" secondary_button_text="Send me Studio B info"]</code></p>
                 <p><?php esc_html_e('Timetable / pricing aggregation:', 'clubworx-integration'); ?> <code>account="all"</code> <?php esc_html_e('or', 'clubworx-integration'); ?> <code>account="primary,studio-b"</code></p>
             </div>
         </div>

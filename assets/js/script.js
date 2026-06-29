@@ -1629,7 +1629,8 @@ class TrialClassBookingManager {
         if (typeof className !== 'string') {
             return false;
         }
-        const hasAdultMarker = /(adults?|all\s*levels|core\s*skills|foundations?)/i.test(className);
+        // Accept common adult naming variants (e.g. "General Gi Class", "General No Gi Class").
+        const hasAdultMarker = /(adults?|all\s*levels|core\s*skills|foundations?|\bgeneral\b|gi\s*class|no\s*gi)/i.test(className);
         const hasNonAdultMarker = /(mini\s*warriors?|tiny\s*warriors?|warriors?\s*\(8\s*[-–]\s*12\)|5\s*[-–]\s*7|3\s*[-–]\s*4|8\s*[-–]\s*12|teens?|13\+|combatives)/i.test(className);
         return hasAdultMarker && !hasNonAdultMarker;
     }
@@ -1680,6 +1681,11 @@ class TrialClassBookingManager {
     // Collect classes for teens based on strict age-group rules.
     getTeensClassesForDay(ageGroup, day) {
         const kidsClasses = this.getKidsClassesForDay(day);
+        const teensClasses = [];
+        const teensSchedule = this.schedule && this.schedule.teens ? this.schedule.teens : {};
+        if (teensSchedule[day]) {
+            teensClasses.push(...teensSchedule[day]);
+        }
         const adultsClasses = [];
         const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
         Object.keys(adultsSchedule).forEach(adultsAgeGroup => {
@@ -1688,7 +1694,7 @@ class TrialClassBookingManager {
             }
         });
         
-        const allClasses = [...new Set([...(kidsClasses || []), ...adultsClasses])];
+        const allClasses = [...new Set([...(kidsClasses || []), ...teensClasses, ...adultsClasses])];
         
         if (ageGroup === 'under13') {
             // Under 13 teens: Warriors (8–12) only — not Mini/Tiny (5–7 / 3–4).
