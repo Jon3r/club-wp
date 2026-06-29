@@ -260,21 +260,38 @@ class Clubworx_Integration {
      * Enqueue plugin scripts and styles
      */
     public function enqueue_scripts() {
-        // Only load on pages with the shortcode
+        // Only load on pages where the shortcode appears directly in post_content.
+        // Pages that embed the shortcode via a page builder call enqueue_booking_assets()
+        // directly from render_booking_form() instead.
         global $post;
         if (!is_a($post, 'WP_Post') || !has_shortcode($post->post_content, 'clubworx_trial_booking')) {
             return;
         }
-        
-        // Enqueue styles
+        $this->enqueue_booking_assets();
+    }
+
+    /**
+     * Register and enqueue all scripts/styles needed by the booking form.
+     * Safe to call multiple times — wp_enqueue_* is idempotent.
+     */
+    public function enqueue_booking_assets() {
         wp_enqueue_style(
             'clubworx-booking-styles',
             CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/css/styles.css',
             array(),
             CLUBWORX_INTEGRATION_VERSION
         );
-        
-        // Enqueue scripts
+
+        // Attach per-location custom CSS inline so it loads even when the shortcode
+        // is inside a page builder (where output_form_custom_css wp_head check misses it).
+        $custom_css = '';
+        foreach (Clubworx_Locations::all() as $slug => $loc) {
+            $custom_css .= $this->build_single_location_form_css($slug, $loc);
+        }
+        if ($custom_css) {
+            wp_add_inline_style('clubworx-booking-styles', $custom_css);
+        }
+
         wp_enqueue_script(
             'clubworx-attribution-tracker',
             CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/attribution-tracker.js',
@@ -282,7 +299,7 @@ class Clubworx_Integration {
             CLUBWORX_INTEGRATION_VERSION,
             true
         );
-        
+
         wp_enqueue_script(
             'clubworx-booking-script',
             CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/script.js',
@@ -290,7 +307,7 @@ class Clubworx_Integration {
             CLUBWORX_INTEGRATION_VERSION,
             true
         );
-        
+
         wp_localize_script('clubworx-attribution-tracker', 'clubworxBookingSettings', $this->get_public_script_settings());
 
         $this->add_analytics_output();
@@ -505,13 +522,17 @@ class Clubworx_Integration {
         global $post;
         $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
         $clubworx_location_slug = Clubworx_Locations::resolve_single_account_from_shortcode($atts['account'], $post_id ? $post_id : null);
-        
+
+        // Ensure assets load even when the shortcode is inside a page builder block
+        // (has_shortcode() only scans post_content, missing builder meta).
+        $this->enqueue_booking_assets();
+
         // Start output buffering
         ob_start();
-        
+
         // Include the booking form template
         include CLUBWORX_INTEGRATION_PLUGIN_DIR . 'templates/booking-form.php';
-        
+
         // Return the buffered content
         return ob_get_clean();
     }
