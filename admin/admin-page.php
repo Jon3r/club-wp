@@ -84,10 +84,21 @@ if ($bookings_exist) {
     }
 }
 
+$preview_location_slug = class_exists('Clubworx_Locations') ? Clubworx_Locations::get_default_slug() : 'primary';
+if ($bookings_tab !== 'all' && $bookings_tab !== '' && isset($all_locs[$bookings_tab])) {
+    $preview_location_slug = $bookings_tab;
+}
+
 $rest_schedule_default_url = add_query_arg(
     'account',
-    class_exists('Clubworx_Locations') ? Clubworx_Locations::get_default_slug() : 'primary',
+    $preview_location_slug,
     rest_url('clubworx/v1/schedule-simple')
+);
+
+$rest_membership_default_url = add_query_arg(
+    'account',
+    $preview_location_slug,
+    rest_url('clubworx/v1/membership-plans')
 );
 ?>
 
@@ -1837,7 +1848,7 @@ jQuery(document).ready(function($) {
         $('#pricing-preview-content').html('<div class="preview-loading"><span class="dashicons dashicons-update dashicons-update-spin"></span> Loading pricing preview...</div>');
         
         $.ajax({
-            url: '<?php echo rest_url('clubworx/v1/membership-plans'); ?>',
+            url: '<?php echo esc_url($rest_membership_default_url); ?>',
             method: 'GET',
             headers: {
                 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>'
