@@ -48,6 +48,7 @@ class Clubworx_REST_API {
                 'under6' => array(),
                 'over6' => array(),
             ),
+            'teens' => array(),
             'adults' => array(
                 'general' => array(),
                 'foundations' => array(),
@@ -107,16 +108,19 @@ class Clubworx_REST_API {
                 }
             }
         }
-        if (isset($sch['women']) && is_array($sch['women'])) {
-            foreach ($sch['women'] as $day => $classes) {
+        foreach (array('teens', 'women') as $flat_cat) {
+            if (!isset($sch[$flat_cat]) || !is_array($sch[$flat_cat])) {
+                continue;
+            }
+            foreach ($sch[$flat_cat] as $day => $classes) {
                 if (!is_array($classes)) {
                     continue;
                 }
-                if (!isset($out['women'][$day])) {
-                    $out['women'][$day] = array();
+                if (!isset($out[$flat_cat][$day])) {
+                    $out[$flat_cat][$day] = array();
                 }
                 foreach ($classes as $c) {
-                    $out['women'][$day][] = $prefix . $c;
+                    $out[$flat_cat][$day][] = $prefix . $c;
                 }
             }
         }
@@ -1425,6 +1429,7 @@ class Clubworx_REST_API {
                 'under6' => array(),
                 'over6' => array()
             ),
+            'teens' => array(),
             'adults' => array(
                 'general' => array(),
                 'foundations' => array()
@@ -1590,25 +1595,44 @@ class Clubworx_REST_API {
      * Determine class category based on name
      */
     private function determine_class_category($className) {
-        $className_lower = strtolower($className);
-        
-        if (strpos($className_lower, 'little') !== false || 
-            strpos($className_lower, 'under 6') !== false || 
-            strpos($className_lower, '4-6') !== false ||
-            strpos($className_lower, 'little kids') !== false) {
+        $n = strtolower($className);
+
+        // Kids under ~6: Mini/Tiny Warriors, explicit age brackets 3-4, 5-7, under 6
+        if (preg_match('/mini\s*warriors?|tiny\s*warriors?/i', $n) ||
+            preg_match('/\b(3\s*[-–]\s*4|5\s*[-–]\s*7)\b/', $n) ||
+            strpos($n, 'under 6') !== false ||
+            strpos($n, 'little') !== false ||
+            strpos($n, '4-6') !== false) {
             return 'kids_under6';
-        } elseif (strpos($className_lower, 'big kids') !== false || 
-                  strpos($className_lower, '7-12') !== false || 
-                  strpos($className_lower, 'over 6') !== false) {
-            return 'kids_over6';
-        } elseif (strpos($className_lower, 'foundations') !== false) {
-            return 'adults_foundations';
-        } elseif (strpos($className_lower, 'women') !== false || 
-                  strpos($className_lower, 'female') !== false) {
-            return 'women';
-        } else {
-            return 'adults_general';
         }
+
+        // Kids 6–12: Warriors (8-12), big kids, 7-12, over 6
+        if (preg_match('/warriors?\s*\(\s*8\s*[-–]\s*12\s*\)/i', $n) ||
+            preg_match('/\b8\s*[-–]\s*12\b/', $n) ||
+            strpos($n, 'big kids') !== false ||
+            strpos($n, '7-12') !== false ||
+            strpos($n, 'over 6') !== false) {
+            return 'kids_over6';
+        }
+
+        // Teens: explicit "teens", "13+"
+        if (strpos($n, 'teen') !== false || strpos($n, '13+') !== false) {
+            return 'teens';
+        }
+
+        // Adults foundations / core skills
+        if (strpos($n, 'foundations') !== false || strpos($n, 'core skills') !== false) {
+            return 'adults_foundations';
+        }
+
+        // Women
+        if (strpos($n, 'women') !== false ||
+            strpos($n, 'female') !== false ||
+            strpos($n, 'she fights') !== false) {
+            return 'women';
+        }
+
+        return 'adults_general';
     }
     
     /**
@@ -1650,6 +1674,9 @@ class Clubworx_REST_API {
                 break;
             case 'kids_over6':
                 $formatted['kids']['over6'][$day][] = $displayName;
+                break;
+            case 'teens':
+                $formatted['teens'][$day][] = $displayName;
                 break;
             case 'adults_foundations':
                 $formatted['adults']['foundations'][$day][] = $displayName;
@@ -3054,11 +3081,12 @@ class Clubworx_REST_API {
         );
         
         $category_filter_order = array(
-            'kids-under6' => __('Kids (Under 6)', 'clubworx-integration'),
-            'kids-over6' => __('Kids (6+)', 'clubworx-integration'),
-            'adults-general' => __('Adults General', 'clubworx-integration'),
+            'kids-under6'      => __('Kids (Under 6)', 'clubworx-integration'),
+            'kids-over6'       => __('Kids (6+)', 'clubworx-integration'),
+            'teens'            => __('Teens', 'clubworx-integration'),
+            'adults-general'   => __('Adults General', 'clubworx-integration'),
             'adults-foundations' => __('Adults Foundations', 'clubworx-integration'),
-            'women' => __('Women', 'clubworx-integration'),
+            'women'            => __('Women', 'clubworx-integration'),
         );
         
         // Filter days if specified
@@ -3459,6 +3487,18 @@ class Clubworx_REST_API {
             }
         }
         
+        if (isset($schedule['teens'][$day])) {
+            foreach ($schedule['teens'][$day] as $class) {
+                $all_classes[] = array(
+                    'name' => $this->extract_class_name($class),
+                    'time' => $this->extract_class_time($class),
+                    'category' => 'Teens',
+                    'category_class' => 'teens',
+                    'sort_time' => $this->time_to_minutes($this->extract_class_time($class))
+                );
+            }
+        }
+
         if (isset($schedule['adults']['general'][$day])) {
             foreach ($schedule['adults']['general'][$day] as $class) {
                 $all_classes[] = array(
