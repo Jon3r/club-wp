@@ -31,6 +31,7 @@ class Clubworx_Admin_Settings {
         add_action('admin_post_clubworx_add_location', array($this, 'handle_add_location'));
         add_action('admin_post_clubworx_delete_location', array($this, 'handle_delete_location'));
         add_action('admin_post_clubworx_set_default_location', array($this, 'handle_set_default_location'));
+        add_action('admin_post_clubworx_set_master_form_style_location', array($this, 'handle_set_master_form_style_location'));
     }
     
     /**
@@ -1350,7 +1351,31 @@ class Clubworx_Admin_Settings {
         wp_safe_redirect(admin_url('admin.php?page=clubworx-integration-settings&tab=locations&defaulted=1'));
         exit;
     }
-    
+
+    public function handle_set_master_form_style_location() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permission denied.', 'clubworx-integration'));
+        }
+        check_admin_referer('clubworx_set_master_form_style_location');
+
+        $slug = isset($_POST['master_form_style_location']) ? sanitize_key(wp_unslash($_POST['master_form_style_location'])) : '';
+        $all = Clubworx_Locations::all();
+        if ($slug !== '' && !isset($all[$slug])) {
+            wp_safe_redirect(admin_url('admin.php?page=clubworx-integration-settings&tab=locations&error=master_style'));
+            exit;
+        }
+
+        $opt = get_option('clubworx_integration_settings', array());
+        if (!is_array($opt)) {
+            $opt = array();
+        }
+        $opt['master_form_style_location'] = $slug;
+        update_option('clubworx_integration_settings', $opt);
+
+        wp_safe_redirect(admin_url('admin.php?page=clubworx-integration-settings&tab=locations&master_style_saved=1'));
+        exit;
+    }
+
     // Form design field callbacks
     public function form_theme_integration_callback() {
         $loc = $this->current_loc();

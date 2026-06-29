@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.2.4
+ * Version: 3.2.5
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.2.4');
+define('CLUBWORX_INTEGRATION_VERSION', '3.2.5');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -896,12 +896,7 @@ class Clubworx_Integration {
      * @return string
      */
     private function build_master_form_base_css() {
-        $master_slugs = Clubworx_Locations::filter_master_form_slugs(
-            array_keys(Clubworx_Locations::all())
-        );
-        $slug = !empty($master_slugs[0])
-            ? $master_slugs[0]
-            : Clubworx_Locations::get_default_slug();
+        $slug = Clubworx_Locations::get_master_form_style_slug();
         $loc = Clubworx_Locations::get($slug);
         if (!$loc) {
             return '';

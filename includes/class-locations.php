@@ -432,6 +432,46 @@ class Clubworx_Locations {
     }
 
     /**
+     * Saved setting: which location supplies master form styling before a location is picked.
+     * Empty string means automatic (first location in the master form list).
+     *
+     * @return string
+     */
+    public static function get_master_form_style_location_setting() {
+        $opt = get_option(self::OPTION_KEY, array());
+        if (!is_array($opt) || empty($opt['master_form_style_location'])) {
+            return '';
+        }
+        return sanitize_key($opt['master_form_style_location']);
+    }
+
+    /**
+     * Location slug whose Form Design settings style the master form before selection.
+     *
+     * @return string
+     */
+    public static function get_master_form_style_slug() {
+        $all = self::all();
+        $configured = self::get_master_form_style_location_setting();
+
+        if ($configured !== '' && isset($all[$configured])) {
+            /**
+             * Override which location styles the master form before a location is selected.
+             *
+             * @param string $configured Configured location slug.
+             */
+            return apply_filters('clubworx_master_form_style_location', $configured);
+        }
+
+        $master_slugs = self::filter_master_form_slugs(array_keys($all));
+        if (!empty($master_slugs[0]) && isset($all[$master_slugs[0]])) {
+            return apply_filters('clubworx_master_form_style_location', $master_slugs[0]);
+        }
+
+        return apply_filters('clubworx_master_form_style_location', self::get_default_slug());
+    }
+
+    /**
      * Slug suitable for new locations from a label.
      */
     public static function slugify($label) {
