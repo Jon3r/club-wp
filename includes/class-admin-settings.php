@@ -271,6 +271,14 @@ class Clubworx_Admin_Settings {
             'clubworx_api_settings'
         );
 
+        add_settings_field(
+            'excluded_class_names',
+            __('Exclude classes from booking form', 'clubworx-integration'),
+            array($this, 'excluded_class_names_callback'),
+            'clubworx-integration-settings',
+            'clubworx_api_settings'
+        );
+
         // Email Settings Section
         add_settings_section(
             'clubworx_email_settings',
@@ -684,6 +692,24 @@ class Clubworx_Admin_Settings {
             }
         }
 
+        if (isset($input['excluded_class_names'])) {
+            $raw = (string) wp_unslash($input['excluded_class_names']);
+            $lines = preg_split('/\r\n|\r|\n/', $raw);
+            $clean = array();
+            if (is_array($lines)) {
+                foreach ($lines as $line) {
+                    $line = sanitize_text_field(trim((string) $line));
+                    if ($line !== '') {
+                        $clean[] = $line;
+                    }
+                }
+            }
+            $out['excluded_class_names'] = implode("\n", $clean);
+            if ($out['excluded_class_names'] !== '') {
+                $out['excluded_class_names'] .= "\n";
+            }
+        }
+
         if (isset($input['email']) && is_array($input['email'])) {
             $e = $input['email'];
             $out['email']['enabled'] = !empty($e['enabled']);
@@ -866,6 +892,19 @@ class Clubworx_Admin_Settings {
 
         if (!isset($existing['default_location']) || $existing['default_location'] === '') {
             $existing['default_location'] = 'primary';
+        }
+
+        // Bust schedule caches so free-trial / exclusion changes apply immediately.
+        if (isset($input['locations']) && is_array($input['locations'])) {
+            delete_transient('clubworx_schedule');
+            foreach (array_keys($input['locations']) as $slug) {
+                $key = sanitize_key($slug);
+                if ($key === '') {
+                    continue;
+                }
+                delete_transient('clubworx_schedule_' . $key);
+                delete_transient('clubworx_schedule_' . $key . '_trial');
+            }
         }
 
         return $existing;
@@ -1144,6 +1183,14 @@ class Clubworx_Admin_Settings {
         $value = isset($loc['fallback_schedule_json']) ? $loc['fallback_schedule_json'] : '';
         echo '<textarea name="' . esc_attr($this->loc_name(array('fallback_schedule_json'))) . '" rows="8" class="large-text code">' . esc_textarea($value) . '</textarea>';
         echo '<p class="description">' . __('Valid JSON schedule structure when the ClubWorx API is unavailable. Leave empty for an empty timetable fallback.', 'clubworx-integration') . '</p>';
+    }
+
+    public function excluded_class_names_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['excluded_class_names']) ? $loc['excluded_class_names'] : "Private Training\n";
+        echo '<textarea name="' . esc_attr($this->loc_name(array('excluded_class_names'))) . '" rows="4" class="large-text code" placeholder="Private Training">' . esc_textarea($value) . '</textarea>';
+        echo '<p class="description">' . __('One class-name fragment per line. Matching classes (case-insensitive) are hidden from the booking form. Default excludes Private Training. Clear the box and save to exclude nothing.', 'clubworx-integration') . '</p>';
+        echo '<p class="description">' . __('The booking form also only lists ClubWorx classes that have free-trial (prospect) spaces available.', 'clubworx-integration') . '</p>';
     }
 
     public function github_username_callback() {
@@ -1564,8 +1611,8 @@ class Clubworx_Admin_Settings {
     public function form_secondary_button_text_callback() {
         $loc = $this->current_loc();
         $value = isset($loc['form']['secondary_button_text']) ? $loc['form']['secondary_button_text'] : '';
-        echo '<input type="text" name="' . esc_attr($this->loc_name(array('form', 'secondary_button_text'))) . '" value="' . esc_attr($value) . '" class="regular-text" placeholder="' . esc_attr__('Submit Information Only', 'clubworx-integration') . '" />';
-        echo '<p class="description">' . __('Custom text for secondary buttons. Leave empty to use default translation.', 'clubworx-integration') . '</p>';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('form', 'secondary_button_text'))) . '" value="' . esc_attr($value) . '" class="regular-text" placeholder="' . esc_attr__('Add to Calendar', 'clubworx-integration') . '" />';
+        echo '<p class="description">' . __('Optional label override for secondary actions (for example the confirmation modal calendar button). The booking form no longer offers an information-only submit path.', 'clubworx-integration') . '</p>';
     }
     
     public function form_custom_css_callback() {
