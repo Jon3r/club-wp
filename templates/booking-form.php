@@ -36,7 +36,7 @@ if (!isset($clubworx_all_locations)) {
                     <div class="form-section clubworx-location-section">
                         <h3><?php _e('Select Location', 'clubworx-integration'); ?></h3>
                         <div class="form-group">
-                            <label for="clubworxLocationSelect"><?php _e('Which location are you enquiring about?', 'clubworx-integration'); ?> *</label>
+                            <label for="clubworxLocationSelect"><?php _e('Which location would you like to book at?', 'clubworx-integration'); ?> *</label>
                             <select id="clubworxLocationSelect" name="clubworxLocation" required>
                                 <option value=""><?php _e('Select a location', 'clubworx-integration'); ?></option>
                                 <?php foreach ($clubworx_location_choices as $choice_slug) : ?>
@@ -78,12 +78,12 @@ if (!isset($clubworx_all_locations)) {
                         </div>
                     </div>
 
-                    <!-- Contact Us Section -->
-                    <div class="form-section">
-                        <h3><?php _e('How would you like us to contact you? (optional)', 'clubworx-integration'); ?></h3>
-                        
+                    <!-- Book a Trial Class Section -->
+                    <div class="form-section" id="bookingSection">
+                        <h3><?php _e('Book a Trial Class', 'clubworx-integration'); ?></h3>
+
                         <div class="form-group">
-                            <label for="programInfo"><?php _e('Which program would you like to know more about?', 'clubworx-integration'); ?> *</label>
+                            <label for="programInfo"><?php _e('Which program would you like to try?', 'clubworx-integration'); ?> *</label>
                             <select id="programInfo" name="programInfo" required>
                                 <option value=""><?php _e('Select a program', 'clubworx-integration'); ?></option>
                                 <option value="kids"><?php _e('Kids', 'clubworx-integration'); ?></option>
@@ -92,34 +92,6 @@ if (!isset($clubworx_all_locations)) {
                                 <option value="women"><?php _e('Women', 'clubworx-integration'); ?></option>
                             </select>
                         </div>
-
-                        <div class="form-group" id="contactPreferenceContainer" style="display: none;">
-                            <label for="contactPreference"><?php _e('How do you wish to be contacted?', 'clubworx-integration'); ?> *</label>
-                            <select id="contactPreference" name="contactPreference">
-                                <option value=""><?php _e('Select contact method', 'clubworx-integration'); ?></option>
-                                <option value="email"><?php _e('Email', 'clubworx-integration'); ?></option>
-                                <option value="phone"><?php _e('Phone Call', 'clubworx-integration'); ?></option>
-                                <option value="book_trial"><?php _e('No need to contact me I am happy to book a trial class', 'clubworx-integration'); ?></option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group" id="submitWithoutBookingContainer" style="display: none;">
-                            <button type="button" id="submitWithoutBooking" class="btn btn-secondary submit-info-btn">
-                                <?php 
-                                $settings = get_option('clubworx_integration_settings', array());
-                                $secondary_text = isset($settings['form_secondary_button_text']) && !empty($settings['form_secondary_button_text']) 
-                                    ? esc_html($settings['form_secondary_button_text']) 
-                                    : __('Submit Information Only', 'clubworx-integration');
-                                echo $secondary_text;
-                                ?>
-                            </button>
-                            <p class="form-helper-text"><?php _e('Just want program information? Submit your details and we\'ll get in touch. You can book your trial class below.', 'clubworx-integration'); ?></p>
-                        </div>
-                    </div>
-
-                    <!-- Book a Trial Class Section -->
-                    <div class="form-section" id="bookingSection" style="display: none;">
-                        <h3><?php _e('Book a Trial Class', 'clubworx-integration'); ?></h3>
 
                         <div class="form-group" id="ageGroupContainer" style="display: none;">
                             <label for="ageGroup" id="ageGroupLabel"><?php _e('Age Group', 'clubworx-integration'); ?> *</label>
@@ -200,4 +172,3 @@ if (!isset($clubworx_all_locations)) {
         </div>
     </div>
 </div>
-

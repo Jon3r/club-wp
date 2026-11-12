@@ -182,6 +182,8 @@ class Clubworx_Locations {
                 'ics_uid_domain' => $host ? $host : 'localhost',
             ),
             'fallback_schedule_json' => '',
+            // One excluded class-name substring per line (case-insensitive).
+            'excluded_class_names' => "Private Training\n",
             'email' => array(
                 'enabled' => true,
                 'admin_email' => get_option('admin_email'),

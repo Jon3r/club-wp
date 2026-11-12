@@ -34,14 +34,13 @@ class TrialClassBookingManager {
         this.schedule = null;
         this.scheduleLoaded = false;
         
-        // Form validation rules
+        // Form validation rules (booking-only form — no information-only path)
         this.validationRules = {
             firstName: { required: true, minLength: 2 },
             lastName: { required: true, minLength: 2 },
             email: { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
             phone: { required: true, pattern: /^(0[1-9][\d\s]{8,9}|[\+]?[1-9][\d\s]{0,20})$/ },
             programInfo: { required: true },
-            contactPreference: { required: true },
             day: { required: true },
             class: { required: true }
         };
@@ -290,7 +289,6 @@ class TrialClassBookingManager {
             email: document.getElementById('email'),
             phone: document.getElementById('phone'),
             programInfo: document.getElementById('programInfo'),
-            contactPreference: document.getElementById('contactPreference'),
             ageGroup: document.getElementById('ageGroup'),
             day: document.getElementById('day'),
             class: document.getElementById('class'),
@@ -298,9 +296,6 @@ class TrialClassBookingManager {
             goals: document.getElementById('goals'),
             
             // Containers for show/hide logic
-            contactPreferenceContainer: document.getElementById('contactPreferenceContainer'),
-            submitWithoutBookingContainer: document.getElementById('submitWithoutBookingContainer'),
-            submitWithoutBooking: document.getElementById('submitWithoutBooking'),
             bookingSection: document.getElementById('bookingSection'),
             ageGroupContainer: document.getElementById('ageGroupContainer'),
             ageGroupLabel: document.getElementById('ageGroupLabel'),
@@ -323,9 +318,6 @@ class TrialClassBookingManager {
         
         // Add to calendar
         this.elements.addToCalendar.addEventListener('click', () => this.handleAddToCalendar());
-        
-        // Submit without booking
-        this.elements.submitWithoutBooking.addEventListener('click', () => this.handleSubmitWithoutBooking());
         
         // Modal background click to close
         this.elements.modal.addEventListener('click', (e) => {
@@ -359,20 +351,12 @@ class TrialClassBookingManager {
             });
         }
 
-        // Program info selection handler
+        // Program selection drives age/day/class cascading
         if (this.elements.programInfo) {
             this.elements.programInfo.addEventListener('change', () => this.handleProgramInfoChange());
             console.log('✅ Program info change event bound');
         } else {
             console.error('❌ Program info element not found');
-        }
-        
-        // Contact preference selection handler (MISSING - this was the bug!)
-        if (this.elements.contactPreference) {
-            this.elements.contactPreference.addEventListener('change', () => this.handleContactPreferenceChange());
-            console.log('✅ Contact preference change event bound');
-        } else {
-            console.error('❌ Contact preference element not found');
         }
         
         // Cascading dropdown handlers
@@ -471,7 +455,7 @@ class TrialClassBookingManager {
             },
             programInfo: {
                 interestedIn: this.elements.programInfo.value,
-                contactPreference: this.elements.contactPreference.value
+                contactPreference: 'book_trial'
             },
             program: {
                 group: this.elements.programInfo.value, // Use program info as group
@@ -770,30 +754,24 @@ class TrialClassBookingManager {
                 
                 console.log('🔑 Final contactKey value:', contactKey);
                 
-                if (!contactKey) {
-                    console.error('❌ No contact key found in prospect response:', prospect);
+                if (!contactKey || String(contactKey).indexOf('fallback_') === 0) {
+                    console.error('❌ No real contact key found in prospect response:', prospect);
                     throw new Error('Failed to get contact key from ClubWorx response');
                 }
                 
             } catch (prospectError) {
                 console.error('❌ Prospect creation failed:', prospectError);
-                console.warn('⚠️ Continuing with fallback contact key for local storage');
-                
-                // Create a fallback contact key for local storage purposes
-                contactKey = `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                prospect = {
-                    fallback: true,
-                    error: prospectError.message,
-                    contact_key: contactKey
-                };
+                // Do not invent a fallback contact key — that produced fake "success"
+                // bookings that never reached ClubWorx.
+                throw new Error(`ClubWorx prospect creation failed: ${prospectError.message}`);
             }
             
             console.log('📞 Contact created with key:', contactKey);
             
             // Safety check for contactKey
-            if (!contactKey) {
-                console.error('❌ ContactKey is undefined or null after prospect creation');
-                throw new Error('Failed to obtain contact key for booking');
+            if (!contactKey || String(contactKey).indexOf('fallback_') === 0) {
+                console.error('❌ ContactKey is invalid after prospect creation');
+                throw new Error('Failed to obtain a real ClubWorx contact key for booking');
             }
             
             // Track attribution data for this lead
@@ -815,7 +793,13 @@ class TrialClassBookingManager {
             });
             
             console.log('📋 Event data received:', eventData);
+            if (!eventData || !eventData.success || !eventData.event || !eventData.event.event_id) {
+                throw new Error((eventData && eventData.message) ? eventData.message : 'No matching ClubWorx class found for booking');
+            }
             const eventId = eventData.event.event_id;
+            if (String(eventId).indexOf('fallback_') === 0) {
+                throw new Error('Could not resolve a live ClubWorx class for this booking');
+            }
             console.log(`📅 Found next available class: ${eventData.event.event_name} on ${eventData.event.event_start_at}`);
             console.log('🆔 Event ID extracted:', eventId);
             
@@ -854,6 +838,13 @@ class TrialClassBookingManager {
             console.log('🥋 Creating trial booking:', bookingData);
             const booking = await this.createTrialBookingInClubWorx(bookingData);
             console.log('📊 Booking response:', booking);
+
+            if (booking && (booking.error || booking.clubworx_error || booking.clubworx_sync_failed)) {
+                throw new Error(booking.message || booking.error || 'ClubWorx rejected the booking');
+            }
+            if (booking && typeof booking.booking_id === 'string' && booking.booking_id.indexOf('mock_booking_') === 0) {
+                throw new Error('ClubWorx booking was not created (mock response blocked)');
+            }
             
             // Handle different possible booking response structures
             let bookingId = null;
@@ -866,8 +857,7 @@ class TrialClassBookingManager {
             }
             
             if (!bookingId) {
-                console.warn('⚠️ No booking ID found in response, using fallback');
-                bookingId = `booking_${Date.now()}`;
+                throw new Error('ClubWorx did not return a booking id — booking was not created');
             }
             
             // Use booking response data which includes location_name and instructor_name
@@ -981,14 +971,13 @@ class TrialClassBookingManager {
         });
         
         console.log('📊 Events API response status:', response.status);
+        const result = await response.json().catch(() => ({}));
         
         if (!response.ok) {
-            const errorData = await response.text();
-            console.error('❌ Events API error:', errorData);
-            throw new Error(`Failed to find available events: ${response.status} - ${errorData}`);
+            console.error('❌ Events API error:', result);
+            throw new Error(result.message || result.error || `Failed to find available events: ${response.status}`);
         }
         
-        const result = await response.json();
         console.log('✅ Available event found:', result);
         return result;
     }
@@ -1007,14 +996,12 @@ class TrialClassBookingManager {
         });
         
         console.log('📊 Bookings API response status:', response.status);
+        const result = await response.json().catch(() => ({}));
         
         if (!response.ok) {
-            const errorData = await response.text();
-            console.error('❌ Bookings API error:', errorData);
-            throw new Error(`Failed to create trial booking: ${response.status} - ${errorData}`);
+            console.error('❌ Bookings API error:', result);
+            throw new Error(result.message || result.error || `Failed to create trial booking: ${response.status}`);
         }
-        
-        const result = await response.json();
         
         if (result.existing_booking) {
             console.log('⚠️ Duplicate booking detected - continuing with existing booking');
@@ -1084,6 +1071,9 @@ class TrialClassBookingManager {
     validateField(fieldName) {
         const element = this.elements[fieldName];
         const rules = this.validationRules[fieldName];
+        if (!element || !rules) {
+            return true;
+        }
         const value = element.type === 'checkbox' ? element.checked : element.value.trim();
         
         // Clear previous errors
@@ -1166,6 +1156,9 @@ class TrialClassBookingManager {
     // Show field error
     showFieldError(fieldName, message) {
         const element = this.elements[fieldName];
+        if (!element || !element.parentNode) {
+            return;
+        }
         element.classList.add('error');
         
         // Remove existing error message
@@ -1185,75 +1178,13 @@ class TrialClassBookingManager {
     // Clear field error
     clearFieldError(fieldName) {
         const element = this.elements[fieldName];
+        if (!element || !element.parentNode) {
+            return;
+        }
         element.classList.remove('error');
         
         const errorElement = element.parentNode.querySelector('.field-error');
         if (errorElement) errorElement.remove();
-    }
-    
-    // Handle submit without booking
-    async handleSubmitWithoutBooking() {
-        console.log('📧 Submit without booking clicked');
-        
-        if (this.isSubmitting) return;
-        
-        // Validate only the required fields for info submission
-        const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'programInfo', 'contactPreference'];
-        let isValid = true;
-        let errorFields = [];
-        
-        if (this.isMasterForm() && !this.getAccountSlug()) {
-            isValid = false;
-            errorFields.push('Location');
-            if (this.elements.locationSelect) {
-                this.elements.locationSelect.classList.add('error');
-            }
-        }
-
-        requiredFields.forEach(fieldName => {
-            if (!this.validateField(fieldName)) {
-                isValid = false;
-                errorFields.push(this.getFieldLabel(fieldName));
-            }
-        });
-        
-        if (!isValid) {
-            const errorMessage = errorFields.length === 1 
-                ? `Please fix the error in: ${errorFields[0]}`
-                : `Please fix the errors in: ${errorFields.slice(0, -1).join(', ')}, and ${errorFields[errorFields.length - 1]}`;
-            
-            this.updateFormStatus(errorMessage, 'error');
-            return;
-        }
-        
-        this.isSubmitting = true;
-        this.updateFormStatus('Submitting your information...', 'processing');
-        this.showLoading('Sending your information...');
-        this.elements.submitWithoutBooking.disabled = true;
-        
-        try {
-            // Collect minimal form data for info request
-            this.collectInfoOnlyFormData();
-            
-            // Submit to ClubWorx as prospect only (no booking)
-            await this.submitInfoOnly();
-
-            // Track info submission in GA4 as backup
-            this.trackGA4InfoSubmission();
-
-            // Show success message
-            this.showInfoSubmissionSuccess();
-            this.updateFormStatus('Information submitted successfully!');
-            
-        } catch (error) {
-            console.error('❌ Info submission failed:', error);
-            this.updateFormStatus('Submission failed. Please try again.', 'error');
-            
-        } finally {
-            this.hideLoading();
-            this.isSubmitting = false;
-            this.elements.submitWithoutBooking.disabled = false;
-        }
     }
     
     async handleLocationChange() {
@@ -1282,7 +1213,7 @@ class TrialClassBookingManager {
     }
 
     resetBookingFields() {
-        const fields = ['programInfo', 'contactPreference', 'ageGroup', 'day', 'class'];
+        const fields = ['programInfo', 'ageGroup', 'day', 'class'];
         fields.forEach((fieldName) => {
             const el = this.elements[fieldName];
             if (el) {
@@ -1292,9 +1223,6 @@ class TrialClassBookingManager {
         });
 
         const hide = [
-            'contactPreferenceContainer',
-            'submitWithoutBookingContainer',
-            'bookingSection',
             'ageGroupContainer',
             'dayContainer',
             'classContainer'
@@ -1306,65 +1234,19 @@ class TrialClassBookingManager {
         });
     }
 
-    // Handle program info selection change
+    // Handle program selection change
     handleProgramInfoChange() {
         console.log('🚀 handleProgramInfoChange called');
         const programInfo = this.elements.programInfo.value;
-        console.log('📊 Selected program info:', programInfo);
+        console.log('📊 Selected program:', programInfo);
         
-        // Show contact preference container and booking section when a program is selected
         if (programInfo) {
-            console.log('📋 Showing contact preference options and booking section');
-            this.showContainer(this.elements.contactPreferenceContainer);
-            this.showContainer(this.elements.submitWithoutBookingContainer);
-            this.showContainer(this.elements.bookingSection);
-            this.elements.contactPreference.required = true;
-            
-            // Set up booking section based on program selection
             this.setupBookingSection(programInfo);
         } else {
-            console.log('👻 Hiding contact preference options and booking section');
-            this.hideContainer(this.elements.contactPreferenceContainer);
-            this.hideContainer(this.elements.submitWithoutBookingContainer);
-            this.hideContainer(this.elements.bookingSection);
-            this.elements.contactPreference.required = false;
-            this.elements.contactPreference.value = '';
-            
-            // Reset booking section
             this.resetBookingSection();
         }
         
-        console.log('🔄 Program info changed to:', programInfo);
-    }
-    
-    // Handle contact preference selection change (RESTORED MISSING FUNCTIONALITY)
-    handleContactPreferenceChange() {
-        console.log('🚀 handleContactPreferenceChange called');
-        const contactPreference = this.elements.contactPreference.value;
-        const programInfo = this.elements.programInfo.value;
-        
-        console.log('📊 Selected contact preference:', contactPreference);
-        console.log('📊 Current program info:', programInfo);
-        
-        // If "book_trial" is selected, show the full booking section
-        if (contactPreference === 'book_trial') {
-            console.log('📋 "Book Trial Class" selected - showing full booking section');
-            
-            // Make sure booking section is visible
-            this.showContainer(this.elements.bookingSection);
-            
-            // Set up the booking section based on the already selected program
-            if (programInfo) {
-                this.setupBookingSection(programInfo);
-            }
-        } else {
-            console.log('📧 Other contact preference selected - only showing info request option');
-            
-            // For email/phone preferences, don't show the booking section initially
-            // User can still manually scroll to booking section if they want
-        }
-        
-        console.log('🔄 Contact preference changed to:', contactPreference);
+        console.log('🔄 Program changed to:', programInfo);
     }
     
     // Set up booking section based on program selection

@@ -297,9 +297,12 @@ class Clubworx_REST_API {
         $account_raw = is_string($account_raw) ? $account_raw : '';
         $slugs = Clubworx_Locations::expand_account_slugs($account_raw, null);
 
+        // Booking form schedule: free-trial classes only + admin exclusions.
         $slug_schedules = array();
         foreach ($slugs as $slug) {
-            $slug_schedules[$slug] = $this->get_clubworx_schedule($slug);
+            $slug_schedules[$slug] = $this->get_clubworx_schedule($slug, array(
+                'free_trial_only' => true,
+            ));
         }
         $schedule = $this->merge_schedule_trees($slug_schedules);
 
@@ -313,12 +316,13 @@ class Clubworx_REST_API {
         }
 
         $first = $slugs[0];
-        $cache_key = 'clubworx_schedule_' . $first;
+        $cache_key = 'clubworx_schedule_' . $first . '_trial';
         $debug_info = array(
             'clubworx_configured' => $clubworx_configured,
             'accounts' => $slugs,
             'cache_status' => get_transient($cache_key) !== false ? 'cached' : 'not_cached',
             'data_source' => $clubworx_configured ? 'clubworx_or_fallback' : 'fallback_only',
+            'free_trial_only' => true,
         );
 
         return new WP_REST_Response(array(
@@ -359,6 +363,12 @@ class Clubworx_REST_API {
             'phone' => isset($data['phone']) ? $data['phone'] : '',
             'status' => isset($data['status']) ? $data['status'] : 'Initial Contact',
         );
+        if (!empty($data['source'])) {
+            $form_data['source'] = $data['source'];
+        }
+        if (!empty($data['notes'])) {
+            $form_data['notes'] = $data['notes'];
+        }
 
         $form_string = http_build_query($form_data);
 
@@ -381,12 +391,36 @@ class Clubworx_REST_API {
             ), 500);
         }
 
+        $response_code = (int) wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (!is_array($body)) {
+            $body = array();
+        }
 
         error_log('Clubworx Integration: ClubWorx prospects response: ' . json_encode($body));
-        error_log('Clubworx Integration: Response code: ' . wp_remote_retrieve_response_code($response));
+        error_log('Clubworx Integration: Response code: ' . $response_code);
 
         $this->store_booking_data('prospect', $data, $body, $slug);
+
+        $contact_key = '';
+        if (!empty($body['contact_key'])) {
+            $contact_key = (string) $body['contact_key'];
+        } elseif (!empty($body['id'])) {
+            $contact_key = (string) $body['id'];
+        } elseif (!empty($body['contact_id'])) {
+            $contact_key = (string) $body['contact_id'];
+        } elseif (!empty($body['data']['contact_key'])) {
+            $contact_key = (string) $body['data']['contact_key'];
+        }
+
+        if ($response_code < 200 || $response_code >= 300 || $contact_key === '') {
+            return new WP_REST_Response(array(
+                'error' => 'ClubWorx prospect creation failed',
+                'message' => isset($body['message']) ? $body['message'] : 'No contact key returned from ClubWorx',
+                'clubworx_status' => $response_code,
+                'clubworx_response' => $body,
+            ), ($response_code >= 400 && $response_code < 600) ? $response_code : 502);
+        }
 
         $loc = $resolved;
         unset($loc['_slug']);
@@ -396,7 +430,7 @@ class Clubworx_REST_API {
             });
         }
 
-        return new WP_REST_Response($body, wp_remote_retrieve_response_code($response));
+        return new WP_REST_Response($body, $response_code);
     }
     
     /**
@@ -512,7 +546,11 @@ class Clubworx_REST_API {
         
         if (is_wp_error($response)) {
             error_log('Clubworx Integration: Events API error: ' . $response->get_error_message());
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+            return new WP_REST_Response(array(
+                'success' => false,
+                'error' => 'ClubWorx events API error',
+                'message' => $response->get_error_message(),
+            ), 502);
         }
         
         $body = json_decode(wp_remote_retrieve_body($response), true);
@@ -520,7 +558,12 @@ class Clubworx_REST_API {
         
         if ($response_code !== 200) {
             error_log('Clubworx Integration: Events API returned: ' . $response_code . ' - ' . json_encode($body));
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+            return new WP_REST_Response(array(
+                'success' => false,
+                'error' => 'ClubWorx events API error',
+                'message' => 'Unable to load live ClubWorx classes for booking.',
+                'clubworx_status' => $response_code,
+            ), 502);
         }
         
         // Find the matching event by class name and day
@@ -573,8 +616,22 @@ class Clubworx_REST_API {
         }
         
         if (!$matchingEvent) {
-            error_log('Clubworx Integration: No matching event found, using fallback');
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+            error_log('Clubworx Integration: No matching event found — refusing fallback event id for live booking');
+            return new WP_REST_Response(array(
+                'success' => false,
+                'error' => 'No matching ClubWorx event',
+                'message' => 'Could not find a live ClubWorx class matching that selection. Please choose another class or try again later.',
+            ), 404);
+        }
+
+        $exclude_patterns = Clubworx_Event_Filters::excluded_class_names_from_location($resolved);
+        $prospect_fields_present = Clubworx_Event_Filters::events_expose_prospect_fields($events);
+        if (!Clubworx_Event_Filters::event_allowed_for_booking($matchingEvent, $exclude_patterns, true, $prospect_fields_present)) {
+            return new WP_REST_Response(array(
+                'success' => false,
+                'error' => 'Class not available for trial booking',
+                'message' => 'That class is not available for a free trial booking. Please choose another class.',
+            ), 400);
         }
         
         // Return the event data with proper structure
@@ -686,9 +743,25 @@ class Clubworx_REST_API {
         }
         $api_url = $base_url . '/bookings?account_key=' . urlencode($clubworx_api_key);
 
+        $contact_key = isset($data['contact_key']) ? (string) $data['contact_key'] : '';
+        $event_id = isset($data['event_id']) ? (string) $data['event_id'] : '';
+
+        if ($contact_key === '' || strpos($contact_key, 'fallback_') === 0) {
+            return new WP_REST_Response(array(
+                'error' => 'Invalid contact key',
+                'message' => 'A real ClubWorx contact key is required before creating a booking.',
+            ), 400);
+        }
+        if ($event_id === '' || strpos($event_id, 'fallback_') === 0) {
+            return new WP_REST_Response(array(
+                'error' => 'Invalid event id',
+                'message' => 'A real ClubWorx event id is required before creating a booking.',
+            ), 400);
+        }
+
         $form_data = array(
-            'contact_key' => isset($data['contact_key']) ? $data['contact_key'] : '',
-            'event_id' => isset($data['event_id']) ? $data['event_id'] : '',
+            'contact_key' => $contact_key,
+            'event_id' => $event_id,
         );
 
         $form_string = http_build_query($form_data);
@@ -713,7 +786,10 @@ class Clubworx_REST_API {
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        $response_code = wp_remote_retrieve_response_code($response);
+        if (!is_array($body)) {
+            $body = array();
+        }
+        $response_code = (int) wp_remote_retrieve_response_code($response);
 
         error_log('Clubworx Integration: ClubWorx bookings response: ' . json_encode($body));
         error_log('Clubworx Integration: Response code: ' . $response_code);
@@ -723,23 +799,23 @@ class Clubworx_REST_API {
         $loc = $resolved;
         unset($loc['_slug']);
 
-        if ($response_code !== 200) {
-            $mockResponse = array(
-                'success' => true,
-                'booking_id' => 'mock_booking_' . time(),
-                'message' => 'Booking stored locally. ClubWorx API endpoint needs configuration.',
-                'clubworx_error' => $body,
-            );
-
-            error_log('Clubworx Integration: ClubWorx API failed, returning mock response: ' . json_encode($mockResponse));
-
+        // Never pretend a ClubWorx booking succeeded — that caused local "success"
+        // confirmations (e.g. Tom Cruise) without a ClubWorx record.
+        if ($response_code < 200 || $response_code >= 300) {
             if (!empty($loc['email']['enabled'])) {
-                Clubworx_SMTP_Context::with_location($loc, function () use ($data, $mockResponse, $loc) {
-                    $this->send_booking_notification($data, $mockResponse, $loc);
+                Clubworx_SMTP_Context::with_location($loc, function () use ($data, $body, $loc) {
+                    $this->send_booking_notification($data, array_merge($body, array(
+                        'clubworx_sync_failed' => true,
+                    )), $loc);
                 });
             }
 
-            return new WP_REST_Response($mockResponse, 200);
+            return new WP_REST_Response(array(
+                'error' => 'ClubWorx booking failed',
+                'message' => isset($body['message']) ? $body['message'] : 'ClubWorx rejected the booking request.',
+                'clubworx_status' => $response_code,
+                'clubworx_response' => $body,
+            ), ($response_code >= 400 && $response_code < 600) ? $response_code : 502);
         }
 
         if (!empty($loc['email']['enabled'])) {
@@ -1267,7 +1343,9 @@ class Clubworx_REST_API {
     public function clear_schedule_cache($request) {
         delete_transient('clubworx_schedule');
         foreach (array_keys(Clubworx_Locations::all()) as $slug) {
-            delete_transient('clubworx_schedule_' . sanitize_key($slug));
+            $key = sanitize_key($slug);
+            delete_transient('clubworx_schedule_' . $key);
+            delete_transient('clubworx_schedule_' . $key . '_trial');
         }
 
         $def = Clubworx_Locations::get_default_slug();
@@ -1292,17 +1370,19 @@ class Clubworx_REST_API {
     }
     
     /**
-     * Get ClubWorx schedule for one location slug (cached per slug).
+     * Get ClubWorx schedule for one location slug (cached per slug / filter mode).
      *
-     * @param string|null $slug Location slug; default location when null.
+     * @param string|null         $slug Location slug; default location when null.
+     * @param array<string,mixed> $options free_trial_only (bool) for booking form lists.
      * @return array<string,mixed>
      */
-    private function get_clubworx_schedule($slug = null) {
+    private function get_clubworx_schedule($slug = null, $options = array()) {
         if ($slug === null || $slug === '') {
             $slug = Clubworx_Locations::get_default_slug();
         }
         $slug = sanitize_key($slug);
         $loc = Clubworx_Locations::get($slug);
+        $free_trial_only = !empty($options['free_trial_only']);
         if ($loc === null) {
             return $this->get_fallback_schedule_for_location(null);
         }
@@ -1315,11 +1395,11 @@ class Clubworx_REST_API {
             return $this->get_fallback_schedule_for_location($loc);
         }
 
-        $cache_key = 'clubworx_schedule_' . $slug;
+        $cache_key = 'clubworx_schedule_' . $slug . ($free_trial_only ? '_trial' : '');
         $cached_schedule = get_transient($cache_key);
 
         if ($cached_schedule !== false) {
-            error_log('Clubworx Integration: Using cached schedule data for ' . $slug);
+            error_log('Clubworx Integration: Using cached schedule data for ' . $slug . ($free_trial_only ? ' (trial)' : ''));
             return $cached_schedule;
         }
 
@@ -1374,7 +1454,10 @@ class Clubworx_REST_API {
                 return $this->get_fallback_schedule_for_location($loc);
             }
 
-            $formatted_schedule = $this->format_clubworx_schedule($schedule_data);
+            $formatted_schedule = $this->format_clubworx_schedule($schedule_data, array(
+                'free_trial_only' => $free_trial_only,
+                'exclude_patterns' => Clubworx_Event_Filters::excluded_class_names_from_location($loc),
+            ));
 
             $cache_expiration = $this->get_sunday_midnight_timestamp();
             $cache_duration = $cache_expiration - time();
@@ -1414,9 +1497,18 @@ class Clubworx_REST_API {
     
     /**
      * Format ClubWorx schedule data into plugin format
+     *
+     * @param array<string,mixed>|array<int,mixed> $clubworx_data
+     * @param array<string,mixed>                  $options
+     * @return array<string,mixed>
      */
-    private function format_clubworx_schedule($clubworx_data) {
+    private function format_clubworx_schedule($clubworx_data, $options = array()) {
         error_log('Clubworx Integration: Raw ClubWorx data received: ' . json_encode($clubworx_data));
+
+        $free_trial_only = !empty($options['free_trial_only']);
+        $exclude_patterns = isset($options['exclude_patterns']) && is_array($options['exclude_patterns'])
+            ? $options['exclude_patterns']
+            : Clubworx_Event_Filters::default_excluded_class_names();
         
         // If ClubWorx returns data in the expected format, use it directly
         if (isset($clubworx_data['kids']) && isset($clubworx_data['adults'])) {
@@ -1464,6 +1556,11 @@ class Clubworx_REST_API {
             error_log('Clubworx Integration: Unknown ClubWorx data format. Type: ' . gettype($clubworx_data) . ', Keys: ' . (is_array($clubworx_data) ? implode(', ', array_keys($clubworx_data)) : 'N/A'));
             return $this->empty_schedule_tree();
         }
+
+        $prospect_fields_present = Clubworx_Event_Filters::events_expose_prospect_fields($events);
+        if ($free_trial_only && !$prospect_fields_present) {
+            error_log('Clubworx Integration: Free-trial filter requested but no prospect-capacity fields found on events; listing non-excluded classes only');
+        }
         
         // Get current week boundaries in the gym's timezone (Australia/Sydney).
         // ClubWorx returns event_start_at with +10:00/+11:00 offsets, so comparing
@@ -1486,6 +1583,12 @@ class Clubworx_REST_API {
                     $total_classes_skipped++;
                     continue;
                 }
+            }
+
+            if (!Clubworx_Event_Filters::event_allowed_for_booking($event, $exclude_patterns, $free_trial_only, $prospect_fields_present)) {
+                error_log('Clubworx Integration: SKIPPING Class #' . $index . ' - excluded or no free-trial space');
+                $total_classes_skipped++;
+                continue;
             }
             
             $classInfo = $this->parse_event_to_class_info($event, $index);
