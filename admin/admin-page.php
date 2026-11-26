@@ -300,6 +300,8 @@ $rest_schedule_default_url = add_query_arg(
                 <p><strong><?php _e('Shortcode:', 'clubworx-integration'); ?></strong> <code>[clubworx_trial_booking]</code></p>
                 <p><strong><?php _e('Master form (location dropdown):', 'clubworx-integration'); ?></strong> <code>[clubworx_trial_booking_master]</code></p>
                 <p class="description"><?php _e('Optional: limit locations with account="slug-one,slug-two" or use master="true" on the standard shortcode.', 'clubworx-integration'); ?></p>
+                <p><strong><?php _e('Contact form (creates a prospect):', 'clubworx-integration'); ?></strong> <code>[clubworx_contact_form]</code></p>
+                <p class="description"><?php _e('Collects first name, last name, email and phone. Optional: limit locations with account="slug-one,slug-two". With a single location the dropdown is hidden.', 'clubworx-integration'); ?></p>
             </div>
         <?php endif; ?>
     </div>

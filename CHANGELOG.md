@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-11-26
+
+### Added
+
+- **Contact form shortcode** `[clubworx_contact_form]`: collects first name, last name, email and phone and creates a ClubWorx prospect via `clubworx/v1/prospects`.
+  - Location dropdown like the master booking form; optional `account="slug-one,slug-two"` (or `all`). With a single location the dropdown is hidden and the location preselected.
+  - Inline thank-you message after submit (no redirect); attribution tracking and analytics event on success.
+  - Honeypot spam protection on the client and in the `prospects` REST endpoint.
+
+### Changed
+
+- Booking assets are split into shared styles/tracker/settings and the booking-only `script.js`, so the contact form loads without the booking script.
+
 ## [1.2.1] - 2024-12-XX
 
 ### Fixed

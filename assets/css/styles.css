@@ -651,3 +651,31 @@ input.error:focus, select.error:focus, textarea.error:focus {
         font-size: 1rem;
     }
 }
+/* Contact form shortcode */
+.clubworx-contact-wrapper .clubworx-hp {
+    position: absolute !important;
+    left: -9999px !important;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.clubworx-contact-wrapper .form-status {
+    text-transform: none;
+    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.clubworx-contact-thanks {
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.clubworx-contact-thanks h3 {
+    margin: 0 0 0.5rem;
+}
+
+.clubworx-contact-thanks p {
+    margin: 0;
+}

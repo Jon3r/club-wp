@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.3.4
+ * Version: 3.4.0
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.3.4');
+define('CLUBWORX_INTEGRATION_VERSION', '3.4.0');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -80,6 +80,7 @@ class Clubworx_Integration {
         // Add shortcodes
         add_shortcode('clubworx_trial_booking', array($this, 'render_booking_form'));
         add_shortcode('clubworx_trial_booking_master', array($this, 'render_master_booking_form'));
+        add_shortcode('clubworx_contact_form', array($this, 'render_contact_form'));
         
         // Enqueue scripts and styles
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
@@ -268,7 +269,12 @@ class Clubworx_Integration {
         if (!is_a($post, 'WP_Post') || !$this->page_has_booking_shortcode($post)) {
             return;
         }
-        $this->enqueue_booking_assets();
+        if ($this->page_has_trial_booking_shortcode($post)) {
+            $this->enqueue_booking_assets();
+        }
+        if (has_shortcode($post->post_content, 'clubworx_contact_form')) {
+            $this->enqueue_contact_form_assets();
+        }
     }
 
     /**
@@ -276,6 +282,43 @@ class Clubworx_Integration {
      * Safe to call multiple times — wp_enqueue_* is idempotent.
      */
     public function enqueue_booking_assets() {
+        $this->enqueue_shared_form_assets();
+
+        wp_enqueue_script(
+            'clubworx-booking-script',
+            CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/script.js',
+            array('clubworx-attribution-tracker'),
+            CLUBWORX_INTEGRATION_VERSION,
+            true
+        );
+    }
+
+    /**
+     * Scripts/styles for the contact form shortcode (no booking script).
+     * Safe to call multiple times.
+     */
+    public function enqueue_contact_form_assets() {
+        $this->enqueue_shared_form_assets();
+
+        wp_enqueue_script(
+            'clubworx-contact-form',
+            CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/contact-form.js',
+            array('clubworx-attribution-tracker'),
+            CLUBWORX_INTEGRATION_VERSION,
+            true
+        );
+    }
+
+    /**
+     * Styles, per-location CSS, attribution tracker, settings and analytics shared by all forms.
+     */
+    private function enqueue_shared_form_assets() {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+
         wp_enqueue_style(
             'clubworx-booking-styles',
             CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/css/styles.css',
@@ -298,14 +341,6 @@ class Clubworx_Integration {
             'clubworx-attribution-tracker',
             CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/attribution-tracker.js',
             array(),
-            CLUBWORX_INTEGRATION_VERSION,
-            true
-        );
-
-        wp_enqueue_script(
-            'clubworx-booking-script',
-            CLUBWORX_INTEGRATION_PLUGIN_URL . 'assets/js/script.js',
-            array('clubworx-attribution-tracker'),
             CLUBWORX_INTEGRATION_VERSION,
             true
         );
@@ -524,6 +559,20 @@ class Clubworx_Integration {
         if (!is_a($post, 'WP_Post')) {
             return false;
         }
+        return $this->page_has_trial_booking_shortcode($post)
+            || has_shortcode($post->post_content, 'clubworx_contact_form');
+    }
+
+    /**
+     * Whether the page content includes a trial booking form shortcode (not the contact form).
+     *
+     * @param WP_Post $post
+     * @return bool
+     */
+    private function page_has_trial_booking_shortcode($post) {
+        if (!is_a($post, 'WP_Post')) {
+            return false;
+        }
         return has_shortcode($post->post_content, 'clubworx_trial_booking')
             || has_shortcode($post->post_content, 'clubworx_trial_booking_master');
     }
@@ -598,6 +647,43 @@ class Clubworx_Integration {
         return ob_get_clean();
     }
     
+    /**
+     * Contact form shortcode: creates a ClubWorx prospect (name, email, phone).
+     * [clubworx_contact_form] or [clubworx_contact_form account="slug-one,slug-two"]
+     *
+     * @param array<string,string>|string $atts
+     * @return string
+     */
+    public function render_contact_form($atts) {
+        $atts = shortcode_atts(array(
+            'account' => 'all',
+        ), $atts, 'clubworx_contact_form');
+
+        global $post;
+        $post_id = is_a($post, 'WP_Post') ? (int) $post->ID : 0;
+
+        $account_attr = trim((string) $atts['account']);
+        if ($account_attr === '') {
+            $account_attr = 'all';
+        }
+
+        $expanded = Clubworx_Locations::expand_account_slugs($account_attr, $post_id ? $post_id : null);
+        $clubworx_location_choices = Clubworx_Locations::filter_master_form_slugs($expanded);
+        if (empty($clubworx_location_choices)) {
+            // Single-location sites only have the legacy "primary" slug; keep the form usable.
+            $clubworx_location_choices = $expanded;
+        }
+        $clubworx_location_choices = array_values(array_unique($clubworx_location_choices));
+        $clubworx_all_locations = Clubworx_Locations::all();
+
+        // Ensure assets load even when the shortcode is inside a page builder block.
+        $this->enqueue_contact_form_assets();
+
+        ob_start();
+        include CLUBWORX_INTEGRATION_PLUGIN_DIR . 'templates/contact-form.php';
+        return ob_get_clean();
+    }
+
     /**
      * Add admin menu
      */

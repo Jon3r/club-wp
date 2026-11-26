@@ -337,6 +337,11 @@ class Clubworx_REST_API {
             $data = array();
         }
 
+        // Honeypot (contact form): bots fill the hidden "website" field. Pretend success, do nothing.
+        if (isset($data['website']) && is_scalar($data['website']) && trim((string) $data['website']) !== '') {
+            return new WP_REST_Response(array('success' => true, 'data' => new stdClass()), 200);
+        }
+
         $resolved = Clubworx_Locations::resolve_from_request($request);
         if (is_wp_error($resolved)) {
             return $this->rest_error_from_wp_error($resolved);
