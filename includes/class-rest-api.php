@@ -503,45 +503,75 @@ class Clubworx_REST_API {
         error_log('Clubworx Integration: Events API URL: ' . $api_url);
         error_log('Clubworx Integration: Looking for class: ' . $selectedClass . ' on day: ' . $day);
         
-        $response = wp_remote_get($api_url, array(
-            'headers' => array(
-                'Accept' => 'application/json',
-            ),
-            'timeout' => 30,
-        ));
-        
-        if (is_wp_error($response)) {
-            error_log('Clubworx Integration: Events API error: ' . $response->get_error_message());
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+        // ClubWorx paginates (default 50). Walk pages so the trial class is not missed
+        // when the 10-day window contains more than one page of events.
+        $events = array();
+        $page_size = 100;
+        for ($page = 1; $page <= 6; $page++) {
+            $page_url = $api_url . '&page=' . $page . '&page_size=' . $page_size;
+            $response = wp_remote_get($page_url, array(
+                'headers' => array(
+                    'Accept' => 'application/json',
+                ),
+                'timeout' => 30,
+            ));
+
+            if (is_wp_error($response)) {
+                error_log('Clubworx Integration: Events API error: ' . $response->get_error_message());
+                if ($page === 1) {
+                    return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+                }
+                break;
+            }
+
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $response_code = wp_remote_retrieve_response_code($response);
+
+            if ($response_code !== 200) {
+                error_log('Clubworx Integration: Events API returned: ' . $response_code . ' - ' . json_encode($body));
+                if ($page === 1) {
+                    return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+                }
+                break;
+            }
+
+            // ClubWorx API returns events in a direct array, not nested under 'events'
+            $page_events = is_array($body) ? $body : array();
+            if (empty($page_events)) {
+                break;
+            }
+
+            $events = array_merge($events, $page_events);
+
+            if (count($page_events) < $page_size) {
+                break;
+            }
         }
-        
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        $response_code = wp_remote_retrieve_response_code($response);
-        
-        if ($response_code !== 200) {
-            error_log('Clubworx Integration: Events API returned: ' . $response_code . ' - ' . json_encode($body));
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
-        }
-        
-        // Find the matching event by class name and day
+
+        // Find the matching event by class name, day and time (earliest upcoming first).
         $matchingEvent = null;
         $dayName = strtolower($day);
-        
-        // ClubWorx API returns events in a direct array, not nested under 'events'
-        $events = is_array($body) ? $body : array();
+        $now_ts = time();
+
+        usort($events, function ($a, $b) {
+            $ta = isset($a['event_start_at']) ? strtotime($a['event_start_at']) : 0;
+            $tb = isset($b['event_start_at']) ? strtotime($b['event_start_at']) : 0;
+            return $ta <=> $tb;
+        });
+        $upcoming = array();
+        $past = array();
+        foreach ($events as $e) {
+            if (isset($e['event_start_at']) && strtotime($e['event_start_at']) >= $now_ts) {
+                $upcoming[] = $e;
+            } else {
+                $past[] = $e;
+            }
+        }
+        // Prefer future events so the booking is never attached to a class that already ran.
+        $events = array_merge($upcoming, $past);
         
         // Debug: Show all Monday events
         error_log('Clubworx Integration: Total events found: ' . count($events));
-        foreach ($events as $event) {
-            if (isset($event['event_start_at'])) {
-                $eventDate = new DateTime($event['event_start_at']);
-                $eventDay = strtolower($eventDate->format('l'));
-                if ($eventDay === 'monday') {
-                    error_log('Clubworx Integration: Monday event found - ' . $event['event_name'] . ' at ' . $eventDate->format('H:i'));
-                }
-            }
-        }
-        
         foreach ($events as $event) {
             if (!isset($event['event_start_at']) || !isset($event['event_name'])) {
                 continue;
@@ -582,7 +612,7 @@ class Clubworx_REST_API {
             'event_id' => $matchingEvent['event_id'],
             'event_name' => $matchingEvent['event_name'],
             'event_start_at' => $matchingEvent['event_start_at'],
-            'event_end_at' => $matchingEvent['event_end_at'],
+            'event_end_at' => isset($matchingEvent['event_end_at']) ? $matchingEvent['event_end_at'] : $matchingEvent['event_start_at'],
             'class_name' => $className,
             'day' => $day,
             'time' => $time
@@ -723,7 +753,8 @@ class Clubworx_REST_API {
         $loc = $resolved;
         unset($loc['_slug']);
 
-        if ($response_code !== 200) {
+        // ClubWorx may answer 200 or 201 on success.
+        if ($response_code < 200 || $response_code >= 300) {
             $mockResponse = array(
                 'success' => true,
                 'booking_id' => 'mock_booking_' . time(),

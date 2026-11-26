@@ -435,6 +435,7 @@ class TrialClassBookingManager {
                     errorMessage = 'Network error. Please check your connection and try again.';
                 } else if (error.message.includes('ClubWorx')) {
                     errorMessage = 'ClubWorx integration error. Please try again or contact support.';
+                    console.error('ClubWorx booking error detail:', error.message);
                 } else if (error.message.includes('available')) {
                     errorMessage = 'No available classes found. Please try a different day or time.';
                 } else {
@@ -1630,7 +1631,7 @@ class TrialClassBookingManager {
             if (!this.scheduleHasAnyClasses()) {
                 return 'No schedule data for this location. Check ClubWorx API settings for this page.';
             }
-            return `No classes available for Adults${dayBit}.`;
+            return `No adult trial classes available${dayBit}.`;
         }
         return `No classes available for ${group} ${ag}${dayBit}.`;
     }
@@ -1785,25 +1786,24 @@ class TrialClassBookingManager {
      * @return {string[]}
      */
     getAdultScheduleDays() {
-        const days = new Set();
-        const adultsSchedule = this.schedule && this.schedule.adults ? this.schedule.adults : {};
-        Object.keys(adultsSchedule).forEach(ag => {
-            Object.keys(adultsSchedule[ag] || {}).forEach(dayKey => {
-                if (this.getAdultClassesForDay(dayKey).length > 0) {
-                    days.add(dayKey);
-                }
-            });
-        });
-        if (days.size > 0) {
-            return Array.from(days);
-        }
         return Array.from(this.collectScheduleDayKeys()).filter(dayKey => {
-            return this.getAllClassesForDay(dayKey).filter(className => this.isAdultClassName(className)).length > 0;
+            return this.getAdultClassesForDay(dayKey).length > 0;
         });
+    }
+
+    /**
+     * The free trial form only offers the adults trial class (event name contains "trial").
+     *
+     * @param {string} className
+     * @return {boolean}
+     */
+    isAdultTrialClassName(className) {
+        return typeof className === 'string' && /\btrial\b/i.test(className);
     }
     
     /**
-     * Adult classes for one day — trust API adults.* buckets, then name-based fallback.
+     * Adult trial classes for one day — adults.* buckets first, then name-based fallback.
+     * Only classes whose name contains "Trial" are returned.
      *
      * @param {string} day
      * @return {string[]}
@@ -1817,14 +1817,17 @@ class TrialClassBookingManager {
                 fromBuckets.push(...list);
             }
         });
-        const unique = [...new Set(fromBuckets)];
-        if (unique.length > 0) {
-            const filtered = unique.filter(className => !this.isKidsClassName(className) && !this.isTeenClassName(className));
-            if (filtered.length > 0) {
-                return filtered;
-            }
-        }
-        return this.getAllClassesForDay(day).filter(className => this.isAdultClassName(className));
+
+        const candidates = [...new Set([
+            ...fromBuckets,
+            ...this.getAllClassesForDay(day).filter(className => this.isAdultClassName(className))
+        ])];
+
+        return candidates.filter(className =>
+            !this.isKidsClassName(className) &&
+            !this.isTeenClassName(className) &&
+            this.isAdultTrialClassName(className)
+        );
     }
     
     // Filter kids classes by visible age bracket in class name.
