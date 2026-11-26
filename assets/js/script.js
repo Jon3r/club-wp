@@ -41,7 +41,6 @@ class TrialClassBookingManager {
             email: { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
             phone: { required: true, pattern: /^(0[1-9][\d\s]{8,9}|[\+]?[1-9][\d\s]{0,20})$/ },
             programInfo: { required: true },
-            contactPreference: { required: true },
             day: { required: true },
             class: { required: true }
         };
@@ -290,7 +289,6 @@ class TrialClassBookingManager {
             email: document.getElementById('email'),
             phone: document.getElementById('phone'),
             programInfo: document.getElementById('programInfo'),
-            contactPreference: document.getElementById('contactPreference'),
             ageGroup: document.getElementById('ageGroup'),
             day: document.getElementById('day'),
             class: document.getElementById('class'),
@@ -298,9 +296,6 @@ class TrialClassBookingManager {
             goals: document.getElementById('goals'),
             
             // Containers for show/hide logic
-            contactPreferenceContainer: document.getElementById('contactPreferenceContainer'),
-            submitWithoutBookingContainer: document.getElementById('submitWithoutBookingContainer'),
-            submitWithoutBooking: document.getElementById('submitWithoutBooking'),
             bookingSection: document.getElementById('bookingSection'),
             ageGroupContainer: document.getElementById('ageGroupContainer'),
             ageGroupLabel: document.getElementById('ageGroupLabel'),
@@ -323,9 +318,6 @@ class TrialClassBookingManager {
         
         // Add to calendar
         this.elements.addToCalendar.addEventListener('click', () => this.handleAddToCalendar());
-        
-        // Submit without booking
-        this.elements.submitWithoutBooking.addEventListener('click', () => this.handleSubmitWithoutBooking());
         
         // Modal background click to close
         this.elements.modal.addEventListener('click', (e) => {
@@ -365,14 +357,6 @@ class TrialClassBookingManager {
             console.log('✅ Program info change event bound');
         } else {
             console.error('❌ Program info element not found');
-        }
-        
-        // Contact preference selection handler (MISSING - this was the bug!)
-        if (this.elements.contactPreference) {
-            this.elements.contactPreference.addEventListener('change', () => this.handleContactPreferenceChange());
-            console.log('✅ Contact preference change event bound');
-        } else {
-            console.error('❌ Contact preference element not found');
         }
         
         // Cascading dropdown handlers
@@ -472,7 +456,8 @@ class TrialClassBookingManager {
             },
             programInfo: {
                 interestedIn: this.elements.programInfo.value,
-                contactPreference: this.elements.contactPreference.value
+                // Contact method step was removed; booking prospects are ready to book.
+                contactPreference: 'book_trial'
             },
             program: {
                 group: this.elements.programInfo.value, // Use program info as group
@@ -537,7 +522,7 @@ class TrialClassBookingManager {
             },
             programInfo: {
                 interestedIn: this.elements.programInfo.value,
-                contactPreference: this.elements.contactPreference.value
+                contactPreference: 'book_trial'
             },
             preferences: {
                 experience: this.elements.experience.value || 'not_specified',
@@ -1199,7 +1184,7 @@ class TrialClassBookingManager {
         if (this.isSubmitting) return;
         
         // Validate only the required fields for info submission
-        const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'programInfo', 'contactPreference'];
+        const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'programInfo'];
         let isValid = true;
         let errorFields = [];
         
@@ -1283,7 +1268,7 @@ class TrialClassBookingManager {
     }
 
     resetBookingFields() {
-        const fields = ['programInfo', 'contactPreference', 'ageGroup', 'day', 'class'];
+        const fields = ['programInfo', 'ageGroup', 'day', 'class'];
         fields.forEach((fieldName) => {
             const el = this.elements[fieldName];
             if (el) {
@@ -1293,9 +1278,6 @@ class TrialClassBookingManager {
         });
 
         const hide = [
-            'contactPreferenceContainer',
-            'submitWithoutBookingContainer',
-            'bookingSection',
             'ageGroupContainer',
             'dayContainer',
             'classContainer'
@@ -1312,60 +1294,15 @@ class TrialClassBookingManager {
         console.log('🚀 handleProgramInfoChange called');
         const programInfo = this.elements.programInfo.value;
         console.log('📊 Selected program info:', programInfo);
-        
-        // Show contact preference container and booking section when a program is selected
+
+        // The booking section is always visible; the program picker is its first step.
         if (programInfo) {
-            console.log('📋 Showing contact preference options and booking section');
-            this.showContainer(this.elements.contactPreferenceContainer);
-            this.showContainer(this.elements.submitWithoutBookingContainer);
-            this.showContainer(this.elements.bookingSection);
-            this.elements.contactPreference.required = true;
-            
-            // Set up booking section based on program selection
             this.setupBookingSection(programInfo);
         } else {
-            console.log('👻 Hiding contact preference options and booking section');
-            this.hideContainer(this.elements.contactPreferenceContainer);
-            this.hideContainer(this.elements.submitWithoutBookingContainer);
-            this.hideContainer(this.elements.bookingSection);
-            this.elements.contactPreference.required = false;
-            this.elements.contactPreference.value = '';
-            
-            // Reset booking section
             this.resetBookingSection();
         }
-        
+
         console.log('🔄 Program info changed to:', programInfo);
-    }
-    
-    // Handle contact preference selection change (RESTORED MISSING FUNCTIONALITY)
-    handleContactPreferenceChange() {
-        console.log('🚀 handleContactPreferenceChange called');
-        const contactPreference = this.elements.contactPreference.value;
-        const programInfo = this.elements.programInfo.value;
-        
-        console.log('📊 Selected contact preference:', contactPreference);
-        console.log('📊 Current program info:', programInfo);
-        
-        // If "book_trial" is selected, show the full booking section
-        if (contactPreference === 'book_trial') {
-            console.log('📋 "Book Trial Class" selected - showing full booking section');
-            
-            // Make sure booking section is visible
-            this.showContainer(this.elements.bookingSection);
-            
-            // Set up the booking section based on the already selected program
-            if (programInfo) {
-                this.setupBookingSection(programInfo);
-            }
-        } else {
-            console.log('📧 Other contact preference selected - only showing info request option');
-            
-            // For email/phone preferences, don't show the booking section initially
-            // User can still manually scroll to booking section if they want
-        }
-        
-        console.log('🔄 Contact preference changed to:', contactPreference);
     }
     
     // Set up booking section based on program selection
