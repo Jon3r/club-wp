@@ -519,7 +519,7 @@ class Clubworx_REST_API {
             if (is_wp_error($response)) {
                 error_log('Clubworx Integration: Events API error: ' . $response->get_error_message());
                 if ($page === 1) {
-                    return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+                    return $this->events_lookup_error(502, 'Could not reach ClubWorx to check the timetable. Please try again shortly.');
                 }
                 break;
             }
@@ -530,7 +530,7 @@ class Clubworx_REST_API {
             if ($response_code !== 200) {
                 error_log('Clubworx Integration: Events API returned: ' . $response_code . ' - ' . json_encode($body));
                 if ($page === 1) {
-                    return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+                    return $this->events_lookup_error(502, 'Could not reach ClubWorx to check the timetable. Please try again shortly.');
                 }
                 break;
             }
@@ -603,10 +603,31 @@ class Clubworx_REST_API {
         }
         
         if (!$matchingEvent) {
-            error_log('Clubworx Integration: No matching event found, using fallback');
-            return $this->generate_fallback_event($selectedClass, $day, $time, $className);
+            error_log('Clubworx Integration: No matching event found for ' . $selectedClass . ' on ' . $day);
+            return $this->events_lookup_error(404, 'No available class matches this selection. Please try a different day or time.');
         }
         
+        // Location and instructor for the confirmation popup. Use whatever ClubWorx
+        // provides, otherwise fall back to this location's name (instructor stays blank).
+        $location_name = '';
+        foreach (array('location_name', 'location', 'venue_name') as $key) {
+            if (!empty($matchingEvent[$key]) && is_string($matchingEvent[$key])) {
+                $location_name = $matchingEvent[$key];
+                break;
+            }
+        }
+        if ($location_name === '' && !empty($resolved['label'])) {
+            $location_name = (string) $resolved['label'];
+        }
+
+        $instructor_name = '';
+        foreach (array('instructor_name', 'instructor', 'coach_name', 'coach') as $key) {
+            if (!empty($matchingEvent[$key]) && is_string($matchingEvent[$key])) {
+                $instructor_name = $matchingEvent[$key];
+                break;
+            }
+        }
+
         // Return the event data with proper structure
         $eventData = array(
             'event_id' => $matchingEvent['event_id'],
@@ -615,7 +636,9 @@ class Clubworx_REST_API {
             'event_end_at' => isset($matchingEvent['event_end_at']) ? $matchingEvent['event_end_at'] : $matchingEvent['event_start_at'],
             'class_name' => $className,
             'day' => $day,
-            'time' => $time
+            'time' => $time,
+            'location_name' => $location_name,
+            'instructor_name' => $instructor_name,
         );
         
         error_log('Clubworx Integration: Found matching event: ' . json_encode($eventData));
@@ -627,7 +650,19 @@ class Clubworx_REST_API {
     }
     
     /**
+     * Error response for the class lookup. Never invent an event ID: ClubWorx
+     * cannot book a made-up event, so the visitor must be told instead.
+     */
+    private function events_lookup_error($status, $message) {
+        return new WP_REST_Response(array(
+            'success' => false,
+            'error' => $message,
+        ), $status);
+    }
+
+    /**
      * Generate fallback event data when ClubWorx API is unavailable
+     * (no longer used by the booking flow; kept for reference).
      */
     private function generate_fallback_event($selectedClass, $day, $time, $className) {
         // Generate a mock event_id based on the class information
@@ -753,24 +788,17 @@ class Clubworx_REST_API {
         $loc = $resolved;
         unset($loc['_slug']);
 
-        // ClubWorx may answer 200 or 201 on success.
+        // ClubWorx answers 200 or 201 on success. Anything else is a real failure:
+        // report it to the visitor instead of showing a fake "booked" confirmation.
         if ($response_code < 200 || $response_code >= 300) {
-            $mockResponse = array(
-                'success' => true,
-                'booking_id' => 'mock_booking_' . time(),
-                'message' => 'Booking stored locally. ClubWorx API endpoint needs configuration.',
+            error_log('Clubworx Integration: ClubWorx rejected booking (HTTP ' . $response_code . '): ' . json_encode($body));
+
+            return new WP_REST_Response(array(
+                'success' => false,
+                'error' => 'ClubWorx did not accept this booking. Please try again or contact us.',
+                'clubworx_status' => $response_code,
                 'clubworx_error' => $body,
-            );
-
-            error_log('Clubworx Integration: ClubWorx API failed, returning mock response: ' . json_encode($mockResponse));
-
-            if (!empty($loc['email']['enabled'])) {
-                Clubworx_SMTP_Context::with_location($loc, function () use ($data, $mockResponse, $loc) {
-                    $this->send_booking_notification($data, $mockResponse, $loc);
-                });
-            }
-
-            return new WP_REST_Response($mockResponse, 200);
+            ), 502);
         }
 
         if (!empty($loc['email']['enabled'])) {
@@ -909,7 +937,7 @@ class Clubworx_REST_API {
             }
         }
         
-        $wpdb->insert($table_name, array(
+        $inserted = $wpdb->insert($table_name, array(
             'type' => $type,
             'account' => $account,
             'request_data' => json_encode($enhanced_request_data),
@@ -918,6 +946,9 @@ class Clubworx_REST_API {
             'medium' => $medium,
             'created_at' => current_time('mysql'),
         ));
+        if ($inserted === false) {
+            error_log('Clubworx Integration: Failed to save ' . $type . ' record to ' . $table_name . ': ' . $wpdb->last_error);
+        }
     }
     
     /**

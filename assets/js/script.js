@@ -1941,12 +1941,21 @@ class TrialClassBookingManager {
             const dateStr = eventDate.toLocaleDateString('en-AU');
             const timeStr = eventDate.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
             
+            // Only show location/instructor lines when we actually have a value.
+            const detailLines = [
+                `📛 Class: ${event.event_name}`,
+                `📅 Date: ${dateStr}`,
+                `🕐 Time: ${timeStr}`
+            ];
+            if (event.location_name) {
+                detailLines.push(`📍 Location: ${event.location_name}`);
+            }
+            if (event.instructor_name) {
+                detailLines.push(`🎓 Instructor: ${event.instructor_name}`);
+            }
+
             message = `Your trial class has been booked!\n\n` +
-                     `📛 Class: ${event.event_name}\n` +
-                     `📅 Date: ${dateStr}\n` +
-                     `🕐 Time: ${timeStr}\n` +
-                     `📍 Location: ${event.location_name}\n` +
-                     `🎓 Instructor: ${event.instructor_name}\n\n` +
+                     `${detailLines.join('\n')}\n\n` +
                      `We'll contact you within 24 hours with additional details and waiver information.\n\n` +
                      `Click OK to learn what to expect at your first class!`;
         }
