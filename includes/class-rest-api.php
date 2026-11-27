@@ -329,6 +329,46 @@ class Clubworx_REST_API {
     }
     
     /**
+     * First prospect status configured in a ClubWorx account (GET /prospect_statuses).
+     *
+     * @param string $base_url Base URL ending in /api/v2.
+     * @param string $api_key  Account key.
+     * @return string Empty when the list cannot be read.
+     */
+    private function get_first_prospect_status($base_url, $api_key) {
+        $response = wp_remote_get($base_url . '/prospect_statuses?account_key=' . urlencode($api_key), array(
+            'headers' => array('Accept' => 'application/json'),
+            'timeout' => 20,
+        ));
+        if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+            return '';
+        }
+        $list = json_decode(wp_remote_retrieve_body($response), true);
+        error_log('Clubworx Integration: Prospect statuses: ' . json_encode($list));
+        if (!is_array($list)) {
+            return '';
+        }
+        if (isset($list['prospect_statuses']) && is_array($list['prospect_statuses'])) {
+            $list = $list['prospect_statuses'];
+        } elseif (isset($list['data']) && is_array($list['data'])) {
+            $list = $list['data'];
+        }
+        foreach ($list as $item) {
+            if (is_string($item) && trim($item) !== '') {
+                return trim($item);
+            }
+            if (is_array($item)) {
+                foreach (array('name', 'status', 'label', 'title') as $k) {
+                    if (isset($item[$k]) && is_string($item[$k]) && trim($item[$k]) !== '') {
+                        return trim($item[$k]);
+                    }
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
      * Create prospect in ClubWorx
      */
     public function create_prospect($request) {
@@ -365,19 +405,33 @@ class Clubworx_REST_API {
             'status' => isset($data['status']) ? $data['status'] : 'Initial Contact',
         );
 
-        $form_string = http_build_query($form_data);
+        // Prospect statuses are customised per ClubWorx account, so "Initial Contact" may not
+        // exist. Once an account has rejected it, skip the status (it is optional) from then on.
+        $no_status_key = 'clubworx_prospect_no_status_' . $slug;
+        $status_cache_key = 'clubworx_prospect_status_' . $slug;
+        $cached_status = get_transient($status_cache_key);
+        if (is_string($cached_status) && $cached_status !== '') {
+            $form_data['status'] = $cached_status;
+        } elseif (get_transient($no_status_key)) {
+            unset($form_data['status']);
+        }
 
-        error_log('Clubworx Integration: Prospects API URL: ' . $api_url);
-        error_log('Clubworx Integration: Form data: ' . $form_string);
+        $post_prospect = function ($fields) use ($api_url) {
+            $form_string = http_build_query($fields);
+            error_log('Clubworx Integration: Prospects API URL: ' . $api_url);
+            error_log('Clubworx Integration: Form data: ' . $form_string);
 
-        $response = wp_remote_post($api_url, array(
-            'headers' => array(
-                'Content-Type' => 'application/x-www-form-urlencoded',
-                'Accept' => 'application/json',
-            ),
-            'body' => $form_string,
-            'timeout' => 30,
-        ));
+            return wp_remote_post($api_url, array(
+                'headers' => array(
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                    'Accept' => 'application/json',
+                ),
+                'body' => $form_string,
+                'timeout' => 30,
+            ));
+        };
+
+        $response = $post_prospect($form_data);
 
         if (is_wp_error($response)) {
             return new WP_REST_Response(array(
@@ -387,21 +441,55 @@ class Clubworx_REST_API {
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
+        $response_code = (int) wp_remote_retrieve_response_code($response);
 
-        error_log('Clubworx Integration: ClubWorx prospects response: ' . json_encode($body));
-        error_log('Clubworx Integration: Response code: ' . wp_remote_retrieve_response_code($response));
+        // Retry without the status when ClubWorx says it is not one of the account's statuses.
+        if (
+            ($response_code < 200 || $response_code >= 300)
+            && isset($form_data['status'])
+            && is_array($body) && isset($body['error'])
+            && stripos((string) $body['error'], 'status is invalid') !== false
+        ) {
+            error_log('Clubworx Integration: Prospect status "' . $form_data['status'] . '" rejected by ClubWorx; looking up valid statuses.');
 
-        $this->store_booking_data('prospect', $data, $body, $slug);
+            // Use the account's own first status; fall back to sending none (status is optional).
+            $valid_status = $this->get_first_prospect_status($base_url, $clubworx_api_key);
+            if ($valid_status !== '') {
+                $form_data['status'] = $valid_status;
+                set_transient($status_cache_key, $valid_status, DAY_IN_SECONDS);
+            } else {
+                unset($form_data['status']);
+                set_transient($no_status_key, 1, DAY_IN_SECONDS);
+            }
 
-        $loc = $resolved;
-        unset($loc['_slug']);
-        if (!empty($loc['email']['enabled'])) {
-            Clubworx_SMTP_Context::with_location($loc, function () use ($data, $body, $loc) {
-                $this->send_prospect_notification($data, $body, $loc);
-            });
+            $response = $post_prospect($form_data);
+            if (is_wp_error($response)) {
+                return new WP_REST_Response(array(
+                    'error' => 'ClubWorx API error',
+                    'message' => $response->get_error_message(),
+                ), 500);
+            }
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $response_code = (int) wp_remote_retrieve_response_code($response);
         }
 
-        return new WP_REST_Response($body, wp_remote_retrieve_response_code($response));
+        error_log('Clubworx Integration: ClubWorx prospects response: ' . json_encode($body));
+        error_log('Clubworx Integration: Response code: ' . $response_code);
+
+        // Only record and notify for prospects ClubWorx actually created.
+        if ($response_code >= 200 && $response_code < 300) {
+            $this->store_booking_data('prospect', $data, $body, $slug);
+
+            $loc = $resolved;
+            unset($loc['_slug']);
+            if (!empty($loc['email']['enabled'])) {
+                Clubworx_SMTP_Context::with_location($loc, function () use ($data, $body, $loc) {
+                    $this->send_prospect_notification($data, $body, $loc);
+                });
+            }
+        }
+
+        return new WP_REST_Response($body, $response_code);
     }
     
     /**

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.3] - 2026-11-27
+
+### Fixed
+
+- Prospect "status is invalid": when ClubWorx rejects the status, the plugin now reads the account's own statuses (`/prospect_statuses`) and retries with the first one (cached 24 hours per location), falling back to no status if the list cannot be read.
+
+## [3.5.2] - 2026-11-27
+
+### Fixed
+
+- **"Error creating new prospect: status is invalid."**: prospect statuses are customised per ClubWorx account, so "Initial Contact" can be rejected. The prospects endpoint now retries without a status (it is optional) and remembers that for the location for 24 hours.
+- Prospects that ClubWorx rejects are no longer stored locally or emailed as if they had been created.
+
 ## [3.5.1] - 2026-11-27
 
 ### Fixed
