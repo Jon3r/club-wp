@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-11-27
+
+### Added
+
+- **Facebook (Meta) Pixel tracking**: new per-location "Facebook Pixel ID" field under Settings → Analytics.
+  - Works with any tagging mode (none, GA4, GTM) and for the booking, master and contact forms.
+  - Sends `Lead` on every form submission and `Schedule` when a trial class is booked (with an `eventID` for future server-side deduplication).
+  - Loads the pixel library only if it isn't already on the page; `PageView` is sent only when the plugin loaded the library itself, to avoid double counting with GTM or other plugins.
+
 ## [3.4.0] - 2026-11-26
 
 ### Added

@@ -29,6 +29,10 @@ class ClubworxContactForm {
         };
 
         this.attributionTracker = typeof AttributionTracker !== 'undefined' ? new AttributionTracker() : null;
+        this.syncTrackerAccount();
+        if (this.attributionTracker && this.getAccountSlug()) {
+            this.attributionTracker.initFacebookPixel();
+        }
 
         this.bind();
     }
@@ -52,6 +56,14 @@ class ClubworxContactForm {
             this.accountField.value = slug;
         }
         this.clearFieldError(this.locationSelect);
+        this.syncTrackerAccount();
+    }
+
+    // Make the tracker use this form's location (analytics IDs and Facebook Pixel are per location).
+    syncTrackerAccount() {
+        if (this.attributionTracker) {
+            this.attributionTracker.accountSlugOverride = this.getAccountSlug();
+        }
     }
 
     getAccountSlug() {
@@ -229,6 +241,7 @@ class ClubworxContactForm {
             this.showThanks();
 
             if (this.attributionTracker && typeof this.attributionTracker.trackFormSubmission === 'function') {
+                this.syncTrackerAccount();
                 try {
                     await this.attributionTracker.trackFormSubmission(contactKey, {
                         programInfo: 'contact_form',

@@ -139,7 +139,7 @@ class Clubworx_Admin_Settings {
         // Analytics (GA4 direct or GTM — mutually exclusive on the front end)
         add_settings_section(
             'clubworx_ga4_settings',
-            __('Analytics (GA4 / GTM)', 'clubworx-integration'),
+            __('Analytics (GA4 / GTM / Facebook Pixel)', 'clubworx-integration'),
             array($this, 'ga4_section_callback'),
             'clubworx-integration-settings'
         );
@@ -188,6 +188,14 @@ class Clubworx_Admin_Settings {
             'ga4_debug_mode',
             __('GA4 Debug Mode', 'clubworx-integration'),
             array($this, 'ga4_debug_mode_callback'),
+            'clubworx-integration-settings',
+            'clubworx_ga4_settings'
+        );
+
+        add_settings_field(
+            'facebook_pixel_id',
+            __('Facebook Pixel ID', 'clubworx-integration'),
+            array($this, 'facebook_pixel_id_callback'),
             'clubworx-integration-settings',
             'clubworx_ga4_settings'
         );
@@ -651,6 +659,10 @@ class Clubworx_Admin_Settings {
                 $out['analytics']['ga4_currency'] = (strlen($cur) === 3) ? $cur : 'USD';
             }
             $out['analytics']['ga4_debug_mode'] = !empty($a['ga4_debug_mode']);
+            if (isset($a['facebook_pixel_id'])) {
+                // Meta Pixel IDs are numeric (15-16 digits).
+                $out['analytics']['facebook_pixel_id'] = preg_replace('/\D/', '', (string) $a['facebook_pixel_id']);
+            }
         }
 
         if (isset($input['branding']) && is_array($input['branding'])) {
@@ -1181,6 +1193,13 @@ class Clubworx_Admin_Settings {
         echo __('Enable Debug Mode (events will appear in GA4 DebugView)', 'clubworx-integration') . '</label>';
     }
     
+    public function facebook_pixel_id_callback() {
+        $loc = $this->current_loc();
+        $value = isset($loc['analytics']['facebook_pixel_id']) ? $loc['analytics']['facebook_pixel_id'] : '';
+        echo '<input type="text" name="' . esc_attr($this->loc_name(array('analytics', 'facebook_pixel_id'))) . '" value="' . esc_attr($value) . '" class="regular-text" inputmode="numeric" placeholder="123456789012345" />';
+        echo '<p class="description">' . __('Meta (Facebook) Pixel ID for this location. Works with any tagging mode. Sends a Lead event when the contact or booking form is submitted, plus a Schedule event when a trial class is booked. Leave empty to disable. If the pixel is already installed through GTM or another plugin, leave this empty to avoid double counting.', 'clubworx-integration') . '</p>';
+    }
+
     public function clubworx_api_url_callback() {
         $loc = $this->current_loc();
         $value = isset($loc['api_url']) ? $loc['api_url'] : '';

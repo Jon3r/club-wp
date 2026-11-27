@@ -16,7 +16,10 @@ class AttributionTracker {
         let slug = cfg.defaultLocation || 'primary';
 
         const locationSelect = document.getElementById('clubworxLocationSelect');
-        if (locationSelect && locationSelect.value && String(locationSelect.value).trim()) {
+        if (this.accountSlugOverride) {
+            // Set by forms that manage their own location (e.g. the contact form).
+            slug = String(this.accountSlugOverride).trim();
+        } else if (locationSelect && locationSelect.value && String(locationSelect.value).trim()) {
             slug = String(locationSelect.value).trim();
         } else {
             const ds = wrap && wrap.getAttribute('data-account');
@@ -49,10 +52,116 @@ class AttributionTracker {
         return id && String(id).trim() !== '' ? String(id).trim() : '';
     }
 
+    getFacebookPixelId() {
+        const id = this.getConfig().facebookPixelId;
+        const clean = id ? String(id).trim() : '';
+        return /^\d{5,20}$/.test(clean) ? clean : '';
+    }
+
+    /**
+     * Load the Meta Pixel library (if needed) and initialise the given pixel once.
+     * PageView is only sent when this plugin loaded the library itself, so a pixel
+     * already installed by GTM or another plugin is not double counted.
+     */
+    ensureFacebookPixel(pixelId) {
+        if (!pixelId) {
+            return false;
+        }
+
+        window.__clubworxFbPixels = window.__clubworxFbPixels || {};
+        if (window.__clubworxFbPixels[pixelId]) {
+            return true;
+        }
+
+        if (!window.fbq) {
+            /* eslint-disable */
+            !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+            n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+            n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+            t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+            document,'script','https://connect.facebook.net/en_US/fbevents.js');
+            /* eslint-enable */
+            window.__clubworxFbLoadedByUs = true;
+        }
+
+        let alreadyInitialised = false;
+        try {
+            const state = typeof window.fbq.getState === 'function' ? window.fbq.getState() : null;
+            alreadyInitialised = !!(state && Array.isArray(state.pixels) && state.pixels.some((p) => String(p.id) === pixelId));
+        } catch (e) {
+            alreadyInitialised = false;
+        }
+
+        window.__clubworxFbPixels[pixelId] = true;
+
+        if (!alreadyInitialised) {
+            window.fbq('init', pixelId);
+            if (window.__clubworxFbLoadedByUs) {
+                window.fbq('trackSingle', pixelId, 'PageView');
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Initialise the pixel for the currently selected location (no event besides PageView).
+     */
+    initFacebookPixel() {
+        try {
+            this.ensureFacebookPixel(this.getFacebookPixelId());
+        } catch (error) {
+            console.warn('⚠️ Facebook Pixel init failed:', error);
+        }
+    }
+
+    /**
+     * Lead for every form submission; Schedule as well when a trial class was booked.
+     */
+    sendFacebookPixelEvents(submissionData) {
+        const pixelId = this.getFacebookPixelId();
+        if (!pixelId) {
+            return;
+        }
+
+        try {
+            this.ensureFacebookPixel(pixelId);
+
+            const booked = !!submissionData.booking_completed;
+            const params = {
+                content_name: submissionData.program_interest || 'Form submission',
+                content_category: booked ? 'trial_booking' : (submissionData.program_interest === 'contact_form' ? 'contact_form' : 'program_info'),
+                lead_source: this.getLeadSource()
+            };
+            const idPart = submissionData.contact_key || this.sessionId;
+
+            window.fbq('trackSingle', pixelId, 'Lead', params, { eventID: 'lead_' + idPart });
+            if (booked) {
+                window.fbq('trackSingle', pixelId, 'Schedule', params, { eventID: 'schedule_' + idPart });
+            }
+        } catch (error) {
+            console.warn('⚠️ Facebook Pixel event failed:', error);
+        }
+    }
+
     init() {
         console.log('📊 Attribution tracker initialized');
         this.captureAttributionData();
         this.captureGA4ClientId();
+
+        // Only initialise on load when the form already points at one location;
+        // master/contact forms with a dropdown initialise after a location is chosen.
+        const wrap = document.querySelector('.clubworx-booking-wrapper');
+        const account = wrap ? wrap.getAttribute('data-account') : '';
+        if (account && String(account).trim()) {
+            this.initFacebookPixel();
+        }
+        document.addEventListener('change', (e) => {
+            const t = e.target;
+            if (t && (t.id === 'clubworxLocationSelect' || t.id === 'clubworxContactLocation') && t.value) {
+                // Let the form handlers update their state first.
+                setTimeout(() => this.initFacebookPixel(), 0);
+            }
+        });
     }
 
     captureAttributionData() {
@@ -95,6 +204,8 @@ class AttributionTracker {
             contact_preference: formData.contactPreference,
             booking_completed: formData.bookingCompleted || false
         };
+
+        this.sendFacebookPixelEvents(submissionData);
 
         await this.sendAttributionToAnalytics(submissionData);
 

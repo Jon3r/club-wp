@@ -3,7 +3,7 @@
  * Plugin Name: Clubworx Integration
  * Plugin URI: https://wordpress.org/plugins/clubworx-integration
  * Description: Trial class booking with ClubWorx API, optional GA4 or GTM analytics, and attribution tracking.
- * Version: 3.4.0
+ * Version: 3.5.0
  * Author: Andy Jones
  * Author URI: https://onlyjonesy.com.au
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin constants
-define('CLUBWORX_INTEGRATION_VERSION', '3.4.0');
+define('CLUBWORX_INTEGRATION_VERSION', '3.5.0');
 define('CLUBWORX_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CLUBWORX_INTEGRATION_PLUGIN_FILE', __FILE__);
@@ -368,6 +368,7 @@ class Clubworx_Integration {
             'gtmContainerId' => isset($a['gtm_container_id']) ? $a['gtm_container_id'] : '',
             'ga4DebugMode' => !empty($a['ga4_debug_mode']),
             'ga4Currency' => isset($a['ga4_currency']) ? $a['ga4_currency'] : 'USD',
+            'facebookPixelId' => isset($a['facebook_pixel_id']) ? preg_replace('/\D/', '', (string) $a['facebook_pixel_id']) : '',
             'clubDisplayName' => isset($b['club_display_name']) ? $b['club_display_name'] : get_bloginfo('name'),
             'clubWebsiteUrl' => isset($b['club_website_url']) ? $b['club_website_url'] : home_url('/'),
             'postBookingRedirectUrl' => isset($b['post_booking_redirect_url']) ? $b['post_booking_redirect_url'] : '',
@@ -414,6 +415,7 @@ class Clubworx_Integration {
                 'gtmContainerId' => '',
                 'ga4DebugMode' => false,
                 'ga4Currency' => 'USD',
+                'facebookPixelId' => '',
                 'clubDisplayName' => get_bloginfo('name'),
                 'clubWebsiteUrl' => home_url('/'),
                 'postBookingRedirectUrl' => '',

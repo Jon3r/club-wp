@@ -54,6 +54,9 @@ class Clubworx_Locations {
             $primary['analytics']['ga4_currency'] = (strlen($cur) === 3) ? $cur : 'USD';
         }
         $primary['analytics']['ga4_debug_mode'] = !empty($opt['ga4_debug_mode']);
+        if (isset($opt['facebook_pixel_id'])) {
+            $primary['analytics']['facebook_pixel_id'] = preg_replace('/\D/', '', (string) $opt['facebook_pixel_id']);
+        }
 
         if (isset($opt['club_display_name'])) {
             $primary['branding']['club_display_name'] = sanitize_text_field($opt['club_display_name']);
@@ -173,6 +176,7 @@ class Clubworx_Locations {
                 'ga4_api_secret' => '',
                 'ga4_currency' => 'USD',
                 'ga4_debug_mode' => false,
+                'facebook_pixel_id' => '',
             ),
             'branding' => array(
                 'club_display_name' => get_bloginfo('name'),
