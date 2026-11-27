@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.1] - 2026-11-27
+
+### Fixed
+
+- **Misleading "ClubWorx integration error"**: the booking form now shows the real reason (no matching class, timetable unreachable, ClubWorx rejected the booking, or contact details not saved) instead of one generic message. Full detail is logged to the browser console.
+- If the prospect cannot be created in ClubWorx, the booking stops with that error instead of continuing with a made-up contact key that ClubWorx always rejects.
+
 ## [3.5.0] - 2026-11-27
 
 ### Added

@@ -415,16 +415,26 @@ class TrialClassBookingManager {
             // Show more specific error message
             let errorMessage = 'Submission failed. Please try again.';
             if (error.message) {
-                if (error.message.includes('network') || error.message.includes('fetch')) {
+                const msg = error.message;
+                const reason = this.extractServerReason(msg);
+                if (msg.includes('Failed to find available events')) {
+                    errorMessage = msg.includes(': 404')
+                        ? 'No available class matches this selection. Please try a different day or time.'
+                        : `We couldn't check the class times just now${reason ? ` (${reason})` : ''}. Please try again shortly.`;
+                } else if (msg.includes('Failed to create trial booking')) {
+                    errorMessage = `ClubWorx did not accept the booking${reason ? `: ${reason}` : ''}. Please try again or contact us.`;
+                } else if (msg.includes('Failed to create prospect') || msg.includes('contact key')) {
+                    errorMessage = `We couldn't save your contact details${reason ? ` (${reason})` : ''}. Please try again or contact us.`;
+                } else if (msg.includes('network') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
                     errorMessage = 'Network error. Please check your connection and try again.';
-                } else if (error.message.includes('ClubWorx')) {
+                } else if (msg.includes('ClubWorx')) {
                     errorMessage = 'ClubWorx integration error. Please try again or contact support.';
-                    console.error('ClubWorx booking error detail:', error.message);
-                } else if (error.message.includes('available')) {
+                } else if (msg.includes('available')) {
                     errorMessage = 'No available classes found. Please try a different day or time.';
                 } else {
-                    errorMessage = `Error: ${error.message}`;
+                    errorMessage = `Error: ${msg}`;
                 }
+                console.error('Booking error detail:', msg);
             }
             
             this.updateFormStatus(errorMessage, 'error');
@@ -436,6 +446,26 @@ class TrialClassBookingManager {
         }
     }
     
+    // Pull a readable reason out of errors shaped like "Failed to ...: 502 - {json}"
+    extractServerReason(message) {
+        const idx = message.indexOf(' - ');
+        if (idx === -1) return '';
+        const raw = message.slice(idx + 3).split('. Your booking')[0];
+        try {
+            const json = JSON.parse(raw);
+            let reason = json.error || json.message || '';
+            if (typeof reason !== 'string') reason = JSON.stringify(reason);
+            if (json.clubworx_error) {
+                const ce = json.clubworx_error;
+                const detail = typeof ce === 'string' ? ce : (ce.error || ce.message || JSON.stringify(ce));
+                reason += ` [ClubWorx HTTP ${json.clubworx_status || '?'}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}]`;
+            }
+            return reason;
+        } catch (e) {
+            return raw.slice(0, 200);
+        }
+    }
+
     // Collect form data
     collectFormData() {
         // For testing purposes, add timestamp to test emails to prevent duplicates
@@ -763,15 +793,10 @@ class TrialClassBookingManager {
                 
             } catch (prospectError) {
                 console.error('❌ Prospect creation failed:', prospectError);
-                console.warn('⚠️ Continuing with fallback contact key for local storage');
-                
-                // Create a fallback contact key for local storage purposes
-                contactKey = `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                prospect = {
-                    fallback: true,
-                    error: prospectError.message,
-                    contact_key: contactKey
-                };
+                // A made-up contact key is always rejected by ClubWorx when booking,
+                // so stop here and show the real reason.
+                const reason = prospectError && prospectError.message ? prospectError.message : 'unknown error';
+                throw new Error(reason.startsWith('Failed to create prospect') ? reason : `Failed to create prospect: ${reason}`);
             }
             
             console.log('📞 Contact created with key:', contactKey);
