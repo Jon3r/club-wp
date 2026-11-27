@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.4] - 2026-11-27
+
+### Fixed
+
+- Release packaging: 3.5.3 was tagged on a commit still labelled 3.5.1, so no installable zip was published and WordPress could not find the update. This release re-publishes the 3.5.3 changes under a new version.
+
 ## [3.5.3] - 2026-11-27
 
 ### Fixed
